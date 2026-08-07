@@ -4,6 +4,23 @@ set -euo pipefail
 
 authselect select local
 authselect enable-feature with-systemd-homed
+
+# mkosi.extra installs the final runtime preload before this script runs.
+# SELinux policy compilation is memory-intensive and must use the system
+# allocator inside the constrained OBS build VM. Restore the preload even if
+# policy installation fails so a partially produced tree cannot lose it.
+preload=/etc/ld.so.preload
+preload_build_backup=/etc/ld.so.preload.particleos-build
+restore_preload() {
+    if [[ -f "$preload_build_backup" ]]; then
+        mv "$preload_build_backup" "$preload"
+    fi
+}
+trap restore_preload EXIT
+if [[ -f "$preload" ]]; then
+    mv "$preload" "$preload_build_backup"
+fi
+
 setsebool -P deny_ptrace=on
 # container_allow_ptrace was removed from Fedora's SELinux policy. Keep it
 # disabled on policy versions that still define it without making newer
@@ -17,6 +34,8 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_obscure_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_packet_radio_sockets.cil
+restore_preload
+trap - EXIT
 
 # Retain the administration tools for run0 and recovery, but do not let an
 # unprivileged caller cross the root boundary through util-linux SUID mode.

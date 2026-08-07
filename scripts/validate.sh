@@ -204,6 +204,8 @@ require_fixed "kernel.printk = 3 3 3 3" mkosi.extra/usr/lib/sysctl.d/70-particle
 require_fixed "setsebool -P deny_ptrace=on" mkosi.postinst.chroot
 require_fixed "if getsebool container_allow_ptrace" mkosi.postinst.chroot
 require_fixed "setsebool -P container_allow_ptrace=off" mkosi.postinst.chroot
+require_fixed "trap restore_preload EXIT" mkosi.postinst.chroot
+require_fixed "restore_preload" mkosi.postinst.chroot
 require_fixed "semodule -X 300 -i" mkosi.postinst.chroot
 require_fixed "chmod 0755 /usr/bin/mount /usr/bin/umount" mkosi.postinst.chroot
 require_fixed "libhardened_malloc.so" mkosi.extra/etc/ld.so.preload
