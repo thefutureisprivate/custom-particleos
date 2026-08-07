@@ -52,7 +52,7 @@ The default image has:
 - no crash dumps, no suspend/hibernation, no desktop stack, no default password,
   no weak-dependency recommendations, no packaged documentation, and no
   embedded private key;
-- HTTPS-only Fedora, openSUSE build-tools, secureblue, OBS systemd, and
+- HTTPS-only Fedora, openSUSE build-tools, ParticleOS OBS, OBS systemd, and
   system-update transports;
 - systemd `run0` plus polkit for administration. `sudo` is not installed.
 
@@ -287,8 +287,8 @@ build-time source for current systemd packages. Fedora packages use the
 HTTPS-only Fedora primary mirror rather than mirror-manager responses that may
 contain plaintext transports. Treat OBS project membership,
 the project certificate, the pinned source-service revision, the vendored
-secureblue COPR key, and Fedora/systemd repositories as release-critical trust
-roots.
+ParticleOS OBS repository key, and Fedora/systemd repositories as
+release-critical trust roots.
 
 Configuration under `/usr/lib/particleos` is immutable and changes through a
 new signed image. Per-machine SSH policy, Certbot state, nginx virtual hosts,

@@ -115,12 +115,14 @@ for required_dependency in authselect findutils policycoreutils sed; do
     fi
 done
 
-require_fixed "includepkgs=hardened_malloc,no_rlimit_as" mkosi.resources/secureblue-packages.repo
-require_fixed "skip_if_unavailable=False" mkosi.resources/secureblue-packages.repo
+require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/Fedora_44/" mkosi.resources/particleos-obs.repo
+require_fixed "includepkgs=hardened_malloc,no_rlimit_as" mkosi.resources/particleos-obs.repo
+require_fixed "skip_if_unavailable=False" mkosi.resources/particleos-obs.repo
+require_fixed "repo_gpgcheck=1" mkosi.resources/particleos-obs.repo
 printf '%s  %s\n' \
-    addb3b31b013e81fcc55e799883f1dc55f5f16295af91c120ec2130f94af2e8e \
-    mkosi.resources/secureblue-copr-pubkey.gpg | sha256sum --check --status - ||
-    fail "the pinned secureblue COPR public key changed"
+    5fe4715ba5d0fb9abf18915ea38213c45240fe828a7aa52c574634a13484814c \
+    mkosi.resources/particleos-obs-pubkey.gpg | sha256sum --check --status - ||
+    fail "the pinned ParticleOS OBS public key changed"
 
 if rg -n 'amd-ucode-firmware|microcode_ctl' mkosi.conf mkosi.conf.d "$obs_recipe"; then
     fail "guest microcode packages are forbidden for the VPS image"

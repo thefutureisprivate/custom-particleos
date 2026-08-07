@@ -29,8 +29,9 @@ Reference commit: 88f8c725911b46b73b31ce14fa9cad72d0e6b551
 Copyright 2025-2026 The Secureblue Authors
 Licensed under the Apache License 2.0.
 
-The vendored secureblue COPR key has SHA-256 digest
-addb3b31b013e81fcc55e799883f1dc55f5f16295af91c120ec2130f94af2e8e.
+The vendored home:thefutureisprivate OBS project key has OpenPGP fingerprint
+0B2264A151F114677B1D0AAF25688B9E8208EED3 and SHA-256 digest
+5fe4715ba5d0fb9abf18915ea38213c45240fe828a7aa52c574634a13484814c.
 
 MIT License
 
