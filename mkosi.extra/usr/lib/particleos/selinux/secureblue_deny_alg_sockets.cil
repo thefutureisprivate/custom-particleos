@@ -1,0 +1,6 @@
+; SPDX-FileCopyrightText: Copyright 2026 The Secureblue Authors
+;
+; SPDX-License-Identifier: Apache-2.0 OR MIT
+
+; Deny userspace other than bluetooth_t access to the kernel crypto API.
+(call secureblue.deny_non_bluetooth (alg_socket))

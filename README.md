@@ -1,249 +1,297 @@
-# ⸭ ParticleOS
+# ParticleOS Webserver
 
-ParticleOS is a fully customizable immutable distribution implementing the
-concepts described in
-[Fitting Everything Together](https://0pointer.net/blog/fitting-everything-together.html).
+ParticleOS Webserver is a minimal, immutable Fedora 44 x86-64 appliance for
+serving static web content with nginx on VPSs. It is built natively by the Open
+Build Service (OBS) with mkosi and systemd's particleOS layout.
 
-Note that ParticleOS is still in development, and we don't provide any backwards
-compatibility guarantees at all.
+There is intentionally no `Containerfile`, OCI image, bootc layer, or
+container build. The native build description is [`mkosi.conf`](./mkosi.conf);
+the OBS entry point is
+[`.obs/fedora/x86-64/webserver/mkosi.conf`](./.obs/fedora/x86-64/webserver/mkosi.conf).
 
-The crucial difference that makes ParticleOS unique compared to other immutable
-distributions is that users build the ParticleOS image themselves and sign it
-with their own keys instead of installing vendor signed images. This allows
-configuring the image to your liking by having full control over which
-distribution is used as the base and which packages are installed into the
-image.
+This repository derives its image layout from
+[systemd/particleos](https://github.com/systemd/particleos) and adapts the
+applicable server and nginx hardening from
+[GrapheneOS/infrastructure](https://github.com/GrapheneOS/infrastructure) and
+[GrapheneOS/grapheneos.org](https://github.com/GrapheneOS/grapheneos.org), plus
+the applicable kernel and allocator hardening from
+[secureblue](https://github.com/secureblue/secureblue).
+It is not GrapheneOS and is not an official GrapheneOS or systemd project.
+Exact reference commits are recorded in [NOTICE](./NOTICE).
 
-The ParticleOS image is built using [mkosi](https://github.com/systemd/mkosi).
-You will need to install the current main branch of mkosi to build current
-ParticleOS images.
+## Security baseline
 
-First, configure the variant you'd like to build in `mkosi.local.conf`. For a
-desktop system, you'll want the `desktop` and one of `gnome`, `kde`, or
-`sway` profiles.
+The default image has:
 
-```conf
-[Distribution]
-Distribution=arch
+- OBS-signed Unified Kernel Images, expected-PCR policy signing, Secure Boot,
+  IPE enforcement, and signed dm-verity for the immutable `/usr` slots;
+- TPM2-encrypted writable root and swap partitions;
+- Fedora SELinux in enforcing targeted mode;
+- GrapheneOS- and secureblue-derived kernel, allocator, TCP, nftables, chrony,
+  OpenSSH, nginx, and systemd service hardening;
+- authenticated DNS over TLS to Cloudflare with fail-closed local DNSSEC
+  validation, no DHCP/RA resolver override, and no plaintext DNS egress;
+- complete ptrace attachment denial, disabled user namespaces, secureblue
+  userspace socket-class restrictions, and layered core-dump prevention;
+- `mount` and `umount` retained for `run0` and recovery without their Fedora
+  SUID-root mode, with the unused SUID `pam_timestamp_check` helper removed;
+- secureblue's signed `hardened_malloc` package preloaded for system and user
+  processes, with the compatibility shim used by its systemd service baseline;
+- irreversible kernel-module loading disablement after the early boot modules
+  and firewall are loaded;
+- an nftables default-deny policy, pre-conntrack service filtering, strict
+  dual-stack reverse-path filtering, source-keyed admission limits, an empty
+  SSH source allowlist, and stateful service-specific egress;
+- key-only Ed25519 SSH with root login, passwords, forwarding, tunnels, and
+  unused authentication methods disabled;
+- a sandboxed nginx-core serving HTTPS over HTTP/1.1, HTTP/2, and HTTP/3, with
+  bounded journal logging, strict request limits, modern TLS defaults, security
+  headers, rate limits, and no version disclosure;
+- non-root Certbot HTTP-01 issuance using the ACME `shortlived` profile, with a
+  fixed file-triggered nginx validation/reload boundary;
+- no crash dumps, no suspend/hibernation, no desktop stack, no default password,
+  no weak-dependency recommendations, no packaged documentation, and no
+  embedded private key;
+- HTTPS-only Fedora, openSUSE build-tools, secureblue, OBS systemd, and
+  system-update transports;
+- systemd `run0` plus polkit for administration. `sudo` is not installed.
 
-[Config]
-Profiles=desktop,kde
-```
+See [docs/SECURITY-MODEL.md](./docs/SECURITY-MODEL.md) for trust boundaries,
+GrapheneOS hardening coverage, and deliberate exclusions.
 
-It is also strongly recommended to write a hashed root password prefixed with
-`hashed:` to `mkosi.rootpw` to allow debugging the system if something breaks.
+## Build in OBS
 
-To build the image, run `mkosi -B -f` from the ParticleOS repository. Currently
-`arch`, `fedora` and `debian` are supported distributions. Implementing support for a
-new distribution (that's already supported in mkosi) is as simple as writing the
-necessary config files to install the required packages for that distribution.
+OBS is the authoritative production build environment. This follows the native
+particleOS OBS mechanism documented in the
+[OBS image package format guide](https://www.open-build-service.org/help/manuals/obs-user-guide/cha-obs-package-formats)
+and its
+[SCM build-recipe extraction guide](https://openbuildservice.org/help/manuals/obs-user-guide/cha-obs-concepts).
 
-To update the system after installation, you clone the ParticleOS repository
-or your fork of it, make sure `mkosi.local.conf` is configured to your liking and
-run `mkosi -B -ff sysupdate -- update --reboot` which will update the system using
-`systemd-sysupdate` and then reboot.
+1. Create the `particleos-fedora-webserver` image package in the
+   [`home:thefutureisprivate`](https://build.opensuse.org/repositories/home:thefutureisprivate)
+   OBS project.
 
-## Using the OBS profile to fetch a newer systemd
+2. Add these lines to the OBS project configuration:
 
-Sometimes ParticleOS adopts systemd features as soon as they get merged into
-systemd without waiting for an official release. That's why we recommend
-enabling the `obs-repos` profile to enable the systemd repositories on OBS
-(https://software.opensuse.org//download.html?project=system%3Asystemd&package=systemd)
-containing systemd packages which are built every day from systemd's git main
-branch.
+   ```text
+   Type: mkosi
+   Repotype: checksumsfile:rawsig staticlinks
+   ```
 
-To enable the `obs-repos` profile, add the following to `mkosi.local.conf`:
+3. Copy [`.obs/_service.example`](./.obs/_service.example) into the OBS package
+   as `_service`. Replace `REPLACE_WITH_REVIEWED_COMMIT` with the full immutable
+   commit ID selected for the release. The
+   `obs_scm` service exports the nested webserver mkosi recipe as the package
+   build description.
 
-```conf
-[Config]
-Profiles=obs-repos
-```
+4. Ensure the OBS package builds against the Fedora 44 repositories and the
+   `system:systemd` Fedora 44 repository selected by
+   [`mkosi.profiles/obs-repos`](./mkosi.profiles/obs-repos).
 
-We also provide the `obs-repos-stable` profile, that will use the latest stable
-branch of systemd, instead of main, providing more stability and less risk, as
-it is what distributions typically use. To enable this profile, add the
-following to `mkosi.local.conf`:
+5. Run the source service and build:
 
-```conf
-[Config]
-Profiles=obs-repos-stable
-```
+   ```sh
+   osc service run
+   osc commit
+   osc results
+   ```
 
-## Building systemd from source
+The recipe includes `mkosi-obs` and carries `# needssslcertforbuild`. OBS
+therefore supplies the project certificate to sign the bootloader, UKIs,
+expected PCR policy, and dm-verity metadata without exposing the project private
+key to this repository.
 
-As an alternative to using the `obs-repos` profile, you can build systemd from source:
+For automatic source-service triggers, copy
+[`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM
+workflow configuration. The service remains pinned until its reviewed commit
+is explicitly advanced.
 
-```sh
-git clone https://github.com/systemd/systemd
-cd systemd
-mkosi -f sandbox -- meson setup build
-mkosi -f sandbox -- meson compile -C build
-mkosi -t none -f
-```
+## Validate a change
 
-Then write the following to `mkosi.local.conf` in the ParticleOS repository to
-use the artifacts from the systemd repository built by mkosi in ParticleOS:
-
-```conf
-[Content]
-VolatilePackageDirectories=../systemd/build/mkosi.builddir/<distribution>~<release>~<arch>
-
-[Build]
-ExtraSearchPaths=../systemd/build
-```
-
-Make sure the distribution and release in `mkosi.local.conf` are identical in the
-systemd checkout and the particleos checkout.
-
-To build a newer systemd, run `git pull` in the systemd repository followed by
- `mkosi -f sandbox -- meson compile -C build` and `mkosi -t none`.
-
-## Signing keys
-
-ParticleOS images are signed for Secure Boot with the user's keys. To generate a new key,
-run `mkosi genkey`. The key must be stored safely, it will be required to sign updates.
-
-The key can be stored in a smartcard. Then you have to set the key in `mkosi.local.conf`:
-
-```
-[Validation]
-SecureBootKey=pkcs11:object=Private key 1;type=private
-SecureBootKeySource=provider:pkcs11
-SignExpectedPcrKey=pkcs11:object=Private key 1;type=private
-SignExpectedPcrKeySource=provider:pkcs11
-VerityKey=pkcs11:object=Private key 1;type=private
-VerityKeySource=provider:pkcs11
-```
-
-With a YubiKey you can generate a key and certificate in PIV:
+Run the repository checks before updating the OBS package:
 
 ```sh
-ykman piv keys generate --algorithm RSA2048 9c pubkey.pem
-ykman piv certificates generate --subject "CN=mkosi" 9c pubkey.pem
-rm pubkey.pem
-pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-objects --type cert
-# Should print something like:
-Using slot 0 with a present token (0x0)
-Certificate Object; type = X.509 cert
-  label:      Certificate for Digital Signature
-  subject:    DN: CN=mkosi
-  serial:     ...
-  ID:         02
-  uri:        pkcs11:model=PKCS%2315%20emulated;manufacturer=piv_II;serial=...;token=mkosi;id=%02;object=Certificate%20for%20Digital%20Signature;type=cert
+./scripts/validate.sh
 ```
 
-Then you have to set the key with the right token and key ID in `mkosi.local.conf`:
+The checks reject container recipes, Fedora releases other than 44, desktop
+packages, `sudo`, known-password credentials, private-key files, and missing
+security invariants. A successful static check does not replace an OBS build
+and boot test.
 
-```
-[Validation]
-SecureBootKey=pkcs11:token=mkosi;id=%%02;type=private
-SecureBootKeySource=provider:pkcs11
-SecureBootCertificate=pkcs11:token=mkosi;id=%%02;type=cert
-SecureBootCertificateSource=provider:pkcs11
-SignExpectedPcrKey=pkcs11:token=mkosi;id=%%02;type=private
-SignExpectedPcrKeySource=provider:pkcs11
-SignExpectedPcrCertificate=pkcs11:token=mkosi;id=%%02;type=cert
-SignExpectedPcrCertificateSource=provider:pkcs11
-VerityKey=pkcs11:token=mkosi;id=%%02;type=private
-VerityKeySource=provider:pkcs11
-VerityCertificate=pkcs11:token=mkosi;id=%%02;type=cert
-VerityCertificateSource=provider:pkcs11
-```
+For a release, pin the source service to the reviewed commit, build it in OBS,
+inspect the manifest, boot the image with Secure Boot and TPM2 in a disposable
+machine, and verify the effective unit sandboxes with
+`systemd-analyze security`.
 
-## Prebuilt images
+The release test must also confirm that `resolvectl status` reports DNS over
+TLS enabled and DNSSEC supported/enabled, a valid signed name resolves, a
+deliberately broken DNSSEC name fails, and the firewall exposes no resolver
+flow on port 53.
 
-ParticleOS images are built on the [Open Build Service](https://download.opensuse.org/repositories/system:/systemd/)
-and can be downloaded and installed. Currently x86-64 GNOME flavours of Fedora and
-Debian are provided and can be found in the respective "images" directory at the
-aforementioned link.
+## Install
 
-The sources can be found in the `obs` branch of this repository, and the build
-configuration can be found in the [system:systemd project](https://build.opensuse.org/project/show/system:systemd)
-on OBS. These images will contain systemd built from latest git main, rather
-than what the respective distributions provide.
+The virtual machine must expose UEFI Secure Boot and a TPM2-compatible vTPM.
+Guest microcode packages are intentionally omitted: CPU microcode is the VPS
+hypervisor/provider's responsibility. Put Secure Boot into setup mode before
+the first boot so the OBS project certificate and included
+Microsoft UEFI certificates can be enrolled. Protect the firmware settings
+with an administrator password afterward.
 
-Images built using the latest systemd stable branch, instead of main, are also
-provided, in the [system:systemd:stable project](https://build.opensuse.org/project/show/system:systemd:stable)
-project on OBS. The ParticleOS configuration is the same, the only difference is
-the systemd packages, which should be safer and more stable to use.
+Import or write the OBS raw disk image directly to the VPS boot volume. The
+production UKI intentionally contains no interactive or destructive installer
+profile. On first boot, the console wizard creates a LUKS-backed systemd-homed
+administrator. The account is added to `wheel` and `systemd-journal`; no fixed
+account or password is built into the image.
 
-The trust model of these images is as follows: any private key material used
-to sign the images is handled automatically and securely by OBS, and is not
-available to the project maintainers. The [OBS signing certificate](https://build.opensuse.org/projects/system:systemd/signing_keys)
-for the `system:systemd` project and the MSFT 3rd party 2011 and 2023 CAs
-are set up to be self-enrolled for UEFI secure boot if the system is booted
-in setup mode. The OBS PGP public key is enrolled in the `systemd-sysupdate`
-preinstalled keyring, and `sysupdate.d` configuration is preinstalled to
-automatically pull updates from OBS. The UKI is signed (both the image itself
-and the PCR policies contained within) with the OBS `system:systemd` project
-certificate as well. The dm-verity partitions are signed with the same key
-as well.
-
-## Installation
-
-Before installing ParticleOS, make sure that Secure Boot is in *setup*
-*mode* on the target system. The Secure Boot mode can be configured in
-the UEFI firmware interface of the target system. If there's an
-existing Linux installation on the target system already, run
-`systemctl reboot --firmware-setup` to reboot into the UEFI firmware
-interface. At the same time, make sure the UEFI firmware interface is
-password protected so an attacker cannot just disable Secure Boot
-again.
-
-To install ParticleOS with a USB drive, first build the image on an
-existing Linux system as described above. Then, write it to the USB
-drive with `mkosi burn /dev/<usb>`. Once written to the USB drive, plug
-the USB drive into the system onto which you'd like to install
-ParticleOS and boot into the USB drive via the firmware menu. Then,
-boot into the "Installer" UKI profile, which runs
-`systemd-sysinstall`. It will prompt for the target drive and any
-other details required, then partition the disk, copy ParticleOS onto
-it, set up the ESP via `bootctl install` and finally install a kernel
-via `bootctl link`. Once it completes, reboot into the target drive
-(i.e not the USB drive) and the default profile (i.e. not the
-installer one) to complete the installation.
-
-If you prefer to drive the install manually, boot into the "Live
-System" UKI profile instead. When you end up in the root shell, run
-`systemd-sysinstall` to install ParticleOS to the system's drive,
-then reboot as above. If you invoke `systemd-sysinstall` without
-arguments it will interactively query you for configuration
-parameters, as necessary. You may alternatively configure the new
-installation with command line parameters of the tool, see the
-systemd-sysinstall(8) man page for details.
-
-## LUKS recovery key
-
-systemd doesn't support adding a recovery key to a partition enrolled with a token
-only (tpm/fido2). It is possible to use cryptenroll to add a recovery password
-to the root partition: `cryptsetup luksAddKey --token-type systemd-tpm2 /dev/<id>`
-
-## Firmwares
-
-Only firmwares that are dependencies of a kernel module are included, but some
-modules don't declare their dependencies properly. Dependencies of a module can be
-found with `modinfo`. If you experience missing firmwares, you should report
-this to the module maintainer. `FirmwareInclude=` can be added in `mkosi.local.conf`
-to include the firmware regardless of whether a module depends on it.
-
-## Configuring systemd-homed after installation
-
-After installing ParticleOS and logging into your systemd-homed managed user,
-run the following to configure systemd-homed for the best experience:
+Use `run0` for privileged operations:
 
 ```sh
-homectl update \
-    --auto-resize-mode=off \
-    --disk-size=max \
-    --luks-discard=on"
+run0 systemctl status nginx.service
+run0 journalctl -u nginx.service
 ```
 
-Disabling the auto resize mode avoids slow system boot and shutdown. Enabling
-LUKS discard makes sure the home directory doesn't become inaccessible because
-systemd-homed is unable to resize the home directory.
+## Operate the web server
 
-## Default root password and user when booting in a virtual machine
+Static content lives in Fedora's SELinux-labelled, root-owned mutable directory
+`/var/www/html`. Replace the placeholder atomically and do not make
+the directory writable by the nginx user:
 
-If you boot ParticleOS in a virtual machine using `mkosi vm`, the root password
-is automatically set to `particleos` and a default user `particleos` with password
-`particleos` is created as well.
+```sh
+run0 install -o root -g root -m 0644 index.html /var/www/html/index.html
+```
+
+TCP ports 80 and 443 and UDP port 443 are enabled by the firewall. Port 80
+exposes only `/.well-known/acme-challenge/` for ACME HTTP-01 and returns 404 for
+every other request until an explicit virtual host is installed. Unknown TLS
+and QUIC names are rejected as well. The supplied domain-specific virtual-host
+template adds a fixed-host HTTP-to-HTTPS redirect without trusting an arbitrary
+Host header.
+
+Point the domain's A and AAAA records at the VPS and confirm port 80 is reachable.
+Then create the ACME account and certificate. Supplying `--agree-tos` is an
+operator decision and is intentionally not built into the image:
+
+```sh
+run0 --user=certbot -- certbot certonly \
+    --domain example.invalid \
+    --email admin@example.invalid \
+    --agree-tos
+```
+
+Certbot requires the ACME `shortlived` profile and defaults to the nginx
+webroot, an ECDSA P-384 key, and HTTP-01. The renewal service can write only the
+pre-created `/var/www/html/.well-known/acme-challenge` leaf, not the rest of the
+site. Its state is owned by the dedicated `certbot` account under
+`/etc/letsencrypt`; nginx's root master can read private keys but its workers
+cannot write them.
+
+Prepare a local copy of the supplied HTTPS virtual host, replace every
+`example.invalid` with the issued domain, and install that prepared file:
+
+```sh
+run0 install -o root -g root -m 0600 \
+    ./https.conf \
+    /var/lib/particleos/nginx/conf.d/https.conf
+run0 nginx -t -c /usr/lib/particleos/nginx/nginx.conf
+run0 systemctl reload nginx.service
+run0 --user=certbot -- certbot renew --dry-run
+run0 systemctl status certbot-renew.timer
+```
+
+The enabled renewal timer uses the same webroot. A successful deployment writes
+a request into `/run/particleos-certbot`; a systemd path unit then runs the
+fixed nginx syntax-check/reload service. Certbot has no access to the systemd
+manager socket. The HTTPS example advertises HTTP/3 and enables HSTS without
+`includeSubDomains` or preload; opt into those only after every subdomain is
+permanently HTTPS-only.
+
+## Enable remote SSH deliberately
+
+The SSH socket is enabled, but nftables admits no SSH source address by default.
+Perform initial administration from the console. Edit
+`/etc/particleos/ssh-allowlist.nft` and add only individual management
+addresses or narrow CIDRs:
+
+```nft
+set ssh_ipv4 {
+    type ipv4_addr
+    flags interval
+    elements = { 203.0.113.10 }
+}
+
+set ssh_ipv6 {
+    type ipv6_addr
+    flags interval
+    elements = { 2001:db8:1234::10 }
+}
+```
+
+Then validate and atomically reload the complete policy:
+
+```sh
+run0 nft --check --file /usr/lib/particleos/nftables.conf
+run0 systemctl reload nftables.service
+run0 systemctl daemon-reload
+```
+
+Install the administrator's Ed25519 public key before relying on remote access.
+Keep console or out-of-band access available: a malformed allowlist correctly
+fails the firewall reload rather than opening SSH. The daemon reload repopulates
+the dynamic cgroup set if `systemd-sysupdate.service` is active while the
+firewall ruleset is replaced.
+
+## DNS trust and failure mode
+
+`systemd-resolved` is the sole host resolver. It authenticates Cloudflare's
+IPv4 and IPv6 resolver endpoints as `cloudflare-dns.com` over TCP/853 and
+performs DNSSEC validation locally. DHCPv4, DHCPv6, and IPv6 Router
+Advertisements cannot replace those servers; LLMNR, multicast DNS, fallback
+resolvers, and plaintext DNS egress are disabled.
+
+This deliberately makes Cloudflare and the Web PKI additional availability and
+privacy trust dependencies. If a VPS provider blocks TCP/853, DNS fails closed
+instead of falling back to port 53. Changing providers requires a signed image
+change to both the resolved configuration and the destination-address firewall
+rules.
+
+Inspect the effective state with:
+
+```sh
+resolvectl status
+resolvectl query cloudflare.com
+resolvectl query dnssec-failed.org
+```
+
+The last command must fail DNSSEC validation.
+
+## Updates and customization
+
+The retained Fedora particleOS `systemd-sysupdate` transfer definitions update
+the A/B `/usr`, verity metadata, and UKI artifacts produced by OBS. Their
+artifact match patterns derive from the `%M` image ID, so they resolve to
+`ParticleOS-Webserver` on this image.
+
+The enabled timer runs updates inside `systemd-sysupdate.service`. PID 1
+publishes that unit's dynamic cgroup ID into nftables, granting only the
+updater—not generic root processes—new HTTPS egress. Trigger a manual check
+through the unit rather than executing the binary directly:
+
+```sh
+run0 systemctl start systemd-sysupdate.service
+```
+
+The update source is fixed to the `home:thefutureisprivate` OBS project's
+`*_images` repository. The separate `system:systemd` repository remains only a
+build-time source for current systemd packages. Fedora packages use the
+HTTPS-only Fedora primary mirror rather than mirror-manager responses that may
+contain plaintext transports. Treat OBS project membership,
+the project certificate, the pinned source-service revision, the vendored
+secureblue COPR key, and Fedora/systemd repositories as release-critical trust
+roots.
+
+Configuration under `/usr/lib/particleos` is immutable and changes through a
+new signed image. Per-machine SSH policy, Certbot state, nginx virtual hosts,
+and web content are the only intended mutable administration surfaces. Add
+required virtual hardware drivers to the early module list before building:
+module loading is permanently disabled for the rest of each boot.

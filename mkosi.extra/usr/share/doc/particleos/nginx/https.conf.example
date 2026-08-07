@@ -1,0 +1,62 @@
+# Copy this file to /var/lib/particleos/nginx/conf.d/https.conf after
+# provisioning the certificate and key. Replace example.invalid first.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.invalid;
+
+    root /var/www/html;
+    include /usr/lib/particleos/nginx/snippets/security-headers.conf;
+
+    location ^~ /.well-known/acme-challenge/ {
+        limit_except GET HEAD {
+            deny all;
+        }
+
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 308 https://example.invalid$request_uri;
+    }
+
+    location ~ (^|/)\. {
+        deny all;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    listen 443 quic;
+    listen [::]:443 quic;
+    http2 on;
+    quic_retry on;
+    server_name example.invalid;
+
+    ssl_certificate /etc/letsencrypt/live/example.invalid/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.invalid/privkey.pem;
+
+    root /var/www/html;
+    index index.html;
+
+    include /usr/lib/particleos/nginx/snippets/security-headers.conf;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+    add_header Strict-Transport-Security "max-age=63072000" always;
+
+    limit_conn per_address 32;
+    limit_req zone=requests_per_address burst=40 nodelay;
+
+    location / {
+        limit_except GET HEAD {
+            deny all;
+        }
+
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ (^|/)\. {
+        deny all;
+    }
+}

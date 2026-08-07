@@ -1,0 +1,38 @@
+[Unit]
+Description=Validate and reload ParticleOS nginx after certificate renewal
+Requires=nginx.service
+After=nginx.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/nginx -e stderr -t -q -c /usr/lib/particleos/nginx/nginx.conf
+ExecStart=/usr/bin/nginx -e stderr -s reload -c /usr/lib/particleos/nginx/nginx.conf
+ExecStopPost=/usr/bin/rm -f /run/particleos-certbot/reload-request
+CapabilityBoundingSet=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateIPC=yes
+PrivateTmp=yes
+ProcSubset=pid
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+ReadWritePaths=/run/particleos-certbot
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
+SystemCallFilter=~@keyring @resources
+UMask=0077

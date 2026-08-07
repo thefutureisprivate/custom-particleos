@@ -1,0 +1,56 @@
+ParticleOS Webserver is derived from:
+
+ParticleOS
+https://github.com/systemd/particleos
+Reference commit: b838e0360125937daf70db5e078dac4f4d4d28b4
+Copyright 2024-2026 ParticleOS contributors
+Licensed under LGPL-2.1-or-later.
+
+Server and webserver configuration is adapted from:
+
+GrapheneOS infrastructure
+https://github.com/GrapheneOS/infrastructure
+Reference commit: 4264feb3f8ce511505a7e522030b04abcd9c4de3
+Copyright 2014-2026 GrapheneOS
+Licensed under the MIT License.
+
+GrapheneOS website nginx configuration
+https://github.com/GrapheneOS/grapheneos.org
+Reference commit: aaf5365402dbb65fc9267b3b71d6f6b1e7d0fbc1
+Copyright 2014-2026 GrapheneOS
+Licensed under the MIT License.
+
+Applicable kernel, allocator, package-repository, and SELinux hardening is
+adapted from:
+
+secureblue
+https://github.com/secureblue/secureblue
+Reference commit: 88f8c725911b46b73b31ce14fa9cad72d0e6b551
+Copyright 2025-2026 The Secureblue Authors
+Licensed under the Apache License 2.0.
+
+The vendored secureblue COPR key has SHA-256 digest
+addb3b31b013e81fcc55e799883f1dc55f5f16295af91c120ec2130f94af2e8e.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+The combined derived configuration is distributed under the repository's
+LGPL-2.1-or-later license.

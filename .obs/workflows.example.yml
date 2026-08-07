@@ -1,0 +1,10 @@
+rebuild:
+  steps:
+    - trigger_services:
+        project: home:thefutureisprivate
+        package: particleos-fedora-webserver
+  filters:
+    event: push
+    branches:
+      only:
+        - main

@@ -1,0 +1,10 @@
+<services>
+  <!-- Install this as _service and replace the revision with a reviewed commit. -->
+  <service name="obs_scm">
+    <param name="scm">git</param>
+    <param name="url">https://github.com/thefutureisprivate/particleos-webserver.git</param>
+    <param name="revision">REPLACE_WITH_REVIEWED_COMMIT</param>
+    <param name="extract">.obs/fedora/x86-64/webserver/mkosi.conf</param>
+    <param name="without-version">1</param>
+  </service>
+</services>

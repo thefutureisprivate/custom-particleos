@@ -1,0 +1,10 @@
+; SPDX-FileCopyrightText: Copyright 2026 The Secureblue Authors
+;
+; SPDX-License-Identifier: Apache-2.0 OR MIT
+
+; Deny packet-radio socket families unused by a VPS web server.
+(in secureblue
+    (call deny_userspace (ax25_socket))
+    (call deny_userspace (netrom_socket))
+    (call deny_userspace (rose_socket))
+    (call deny_userspace (x25_socket)))

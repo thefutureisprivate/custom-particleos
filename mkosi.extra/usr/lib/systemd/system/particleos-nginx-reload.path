@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for validated Certbot deployment requests
+Requires=nginx.service
+After=nginx.service
+
+[Path]
+PathExists=/run/particleos-certbot/reload-request
+Unit=particleos-nginx-reload.service
+
+[Install]
+WantedBy=multi-user.target
