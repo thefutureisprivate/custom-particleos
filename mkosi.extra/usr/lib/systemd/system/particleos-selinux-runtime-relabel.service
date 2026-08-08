@@ -6,8 +6,9 @@ Documentation=man:restorecon(8)
 DefaultDependencies=no
 ConditionSecurity=selinux
 ConditionPathExists=/run/udev
-Before=systemd-udevd.service systemd-udevd-varlink.socket
+Before=systemd-udevd.service systemd-udevd-kernel.socket systemd-udevd-varlink.socket
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/usr/sbin/restorecon -RF /dev /run/udev
