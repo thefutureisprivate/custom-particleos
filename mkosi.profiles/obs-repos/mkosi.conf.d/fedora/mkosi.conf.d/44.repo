@@ -7,3 +7,4 @@ baseurl=https://download.opensuse.org/repositories/system:/systemd/Fedora_44/
 gpgcheck=1
 gpgkey=file:///usr/share/pki/rpm-gpg/systemd.gpg
 enabled=1
+excludepkgs=ipe-policy

@@ -24,8 +24,8 @@ Exact reference commits are recorded in [NOTICE](./NOTICE).
 The default image has:
 
 - OBS-signed Unified Kernel Images, an exclusive OBS-project Secure Boot trust
-  database, IPE enforcement, and signed dm-verity for the immutable `/usr`
-  slots;
+  database, a project-signed IPE policy in enforcement mode, and signed
+  dm-verity for the immutable `/usr` slots;
 - TPM2-encrypted writable root and swap partitions bound to Secure Boot PCR 7;
 - Fedora SELinux in enforcing targeted mode;
 - GrapheneOS- and secureblue-derived kernel, allocator, TCP, nftables, chrony,
@@ -92,7 +92,22 @@ and its
    for the particleOS systemd packages selected by
    [`mkosi.profiles/obs-repos`](./mkosi.profiles/obs-repos).
 
-5. Run the source service and build:
+5. Link the official `system:systemd/ipe-policy` package into the project and
+   enable its Fedora 44 build. OBS then signs that policy with the same project
+   certificate used by ParticleOS:
+
+   ```sh
+   osc linkpac system:systemd ipe-policy home:thefutureisprivate ipe-policy
+   osc meta pkg home:thefutureisprivate ipe-policy \
+       -F .obs/ipe-policy-meta.example.xml
+   ```
+
+   The image repository deliberately excludes the systemd-project build of
+   this package and gives the ParticleOS repository priority. Do not enable IPE
+   with a policy signed by a certificate absent from the exclusive UEFI
+   database.
+
+6. Run the source service and build:
 
    ```sh
    osc service run
@@ -106,7 +121,8 @@ dm-verity metadata without exposing the project private key to this repository.
 That project certificate is the only key enrolled in the image's Secure Boot
 database. Root and swap are bound directly to PCR 7; expected-PCR signing is
 disabled because OBS's RSA-4096 project key is not accepted as an external
-policy key by common TPM2 implementations.
+policy key by common TPM2 implementations. The same RSA key remains suitable
+for signing and verifying the IPE policy.
 
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM

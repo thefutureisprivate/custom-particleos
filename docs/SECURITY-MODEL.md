@@ -51,6 +51,12 @@ Secure Boot authority, but it does not by itself prevent rollback to an older
 UKI signed by the same project key. OBS source pinning, signed dm-verity, update
 policy, and release operations remain responsible for rollback control.
 
+The official systemd IPE policy source is rebuilt in the ParticleOS OBS
+project, where OBS signs it with this same certificate. The systemd-project
+build is excluded from package resolution. This lets the kernel authenticate
+and enforce IPE without enrolling the broader systemd project certificate in
+UEFI.
+
 This image targets VPS guests only. It does not install CPU microcode payloads,
 because the physical host's microcode is controlled by the VPS provider. The
 provider's hypervisor, host kernel, CPU microcode, and virtual firmware are

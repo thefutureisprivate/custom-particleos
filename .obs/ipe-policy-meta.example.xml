@@ -1,0 +1,11 @@
+<package name="ipe-policy" project="home:thefutureisprivate">
+  <title>ParticleOS-signed IPE policy</title>
+  <description>
+    Official system:systemd IPE policy rebuilt by this project so the policy
+    and ParticleOS boot chain share one Secure Boot trust anchor.
+  </description>
+  <build>
+    <disable/>
+    <enable repository="Fedora_44" arch="x86_64"/>
+  </build>
+</package>

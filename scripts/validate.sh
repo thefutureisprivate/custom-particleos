@@ -72,6 +72,7 @@ require_fixed "ToolsTreeMirror=https://download.opensuse.org" "$obs_recipe"
 require_fixed "Profiles=obs-sysupdate" "$obs_recipe"
 require_fixed "WithRecommends=no" "$obs_recipe"
 xmllint --noout .obs/_service.example
+xmllint --noout .obs/ipe-policy-meta.example.xml
 xmllint --noout .obs/project-meta.example.xml
 require_fixed "https://github.com/thefutureisprivate/particleos-webserver.git" .obs/_service.example
 require_fixed "REPLACE_WITH_REVIEWED_COMMIT" .obs/_service.example
@@ -130,9 +131,12 @@ for required_dependency in authselect findutils policycoreutils sed; do
 done
 
 require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/Fedora_44/" mkosi.resources/particleos-obs.repo
-require_fixed "includepkgs=hardened_malloc,no_rlimit_as" mkosi.resources/particleos-obs.repo
+require_fixed "priority=1" mkosi.resources/particleos-obs.repo
+require_fixed "includepkgs=hardened_malloc,ipe-policy,no_rlimit_as" mkosi.resources/particleos-obs.repo
 require_fixed "skip_if_unavailable=False" mkosi.resources/particleos-obs.repo
 require_fixed "repo_gpgcheck=1" mkosi.resources/particleos-obs.repo
+require_fixed "excludepkgs=ipe-policy" mkosi.profiles/obs-repos/mkosi.conf.d/fedora/mkosi.conf.d/44.repo
+require_fixed '<enable repository="Fedora_44" arch="x86_64"/>' .obs/ipe-policy-meta.example.xml
 printf '%s  %s\n' \
     5fe4715ba5d0fb9abf18915ea38213c45240fe828a7aa52c574634a13484814c \
     mkosi.resources/particleos-obs-pubkey.gpg | sha256sum --check --status - ||
