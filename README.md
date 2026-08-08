@@ -27,7 +27,8 @@ The default image has:
   database, a project-signed IPE policy in enforcement mode, and signed
   dm-verity for the immutable `/usr` slots;
 - TPM2-encrypted writable root and swap partitions bound to Secure Boot PCR 7;
-- Fedora SELinux in enforcing targeted mode;
+- Fedora SELinux in enforcing targeted mode, with policy loaded from immutable
+  usr before switch-root;
 - GrapheneOS- and secureblue-derived kernel, allocator, TCP, nftables, chrony,
   OpenSSH, nginx, and systemd service hardening;
 - authenticated DNS over TLS to Cloudflare with fail-closed local DNSSEC

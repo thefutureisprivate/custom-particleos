@@ -43,6 +43,7 @@ require_fixed "SignExpectedPcr=no" mkosi.conf
 require_fixed "SignExpectedPcr=no" mkosi.uki-profiles/95-emergency.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
+require_fixed "MakeSymlinks=/usr/share/factory/etc/selinux:/etc/selinux" mkosi.extra/usr/lib/repart.d/40-root.conf
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }
@@ -75,6 +76,9 @@ for kernel_argument in \
     require_fixed "$kernel_argument" mkosi.conf
     require_fixed "$kernel_argument" mkosi.uki-profiles/95-emergency.conf
 done
+if rg -n "preempt=none" mkosi.conf mkosi.uki-profiles; then
+    fail "the current Fedora kernel rejects preempt=none"
+fi
 
 obs_recipe=.obs/fedora/x86-64/webserver/mkosi.conf
 require_fixed "# needssslcertforbuild" "$obs_recipe"

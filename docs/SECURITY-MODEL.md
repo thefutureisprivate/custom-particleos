@@ -113,6 +113,8 @@ systemd-repart would automatically add an unusable signed PCR 11 policy to the
 direct PCR 7 policy. The non-PCR split metadata required for OBS's two-pass
 dm-verity signing is retained. SELinux relabeling occurs at image build time
 and the installed policy is targeted/enforcing.
+The encrypted root is created with an early `/etc/selinux` symlink to the
+immutable factory policy so PID 1 can load it before tmpfiles runs.
 
 OBS forces mkosi to produce an aggregate checksum before attaching the final
 Secure Boot and verity signatures. A post-output hook removes exactly that
