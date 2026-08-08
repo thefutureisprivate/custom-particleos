@@ -67,7 +67,7 @@ particleOS OBS mechanism documented in the
 and its
 [SCM build-recipe extraction guide](https://openbuildservice.org/help/manuals/obs-user-guide/cha-obs-concepts).
 
-1. Create the `particleos-fedora-webserver` image package in the
+1. Create the `particleos-webserver` image package in the
    [`home:thefutureisprivate`](https://build.opensuse.org/repositories/home:thefutureisprivate)
    OBS project.
 
@@ -84,8 +84,11 @@ and its
    `obs_scm` service exports the nested webserver mkosi recipe as the package
    build description.
 
-4. Ensure the OBS package builds against the Fedora 44 repositories and the
-   `system:systemd` Fedora 44 repository selected by
+4. Apply [`.obs/project-meta.example.xml`](./.obs/project-meta.example.xml) as
+   the project metadata. Both Fedora repositories must inherit from
+   `Fedora:44/update`, not the frozen `Fedora:44/standard` release repository.
+   The `system:systemd` Fedora 44 repository remains ahead of Fedora updates
+   for the particleOS systemd packages selected by
    [`mkosi.profiles/obs-repos`](./mkosi.profiles/obs-repos).
 
 5. Run the source service and build:

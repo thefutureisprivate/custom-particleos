@@ -63,9 +63,14 @@ require_fixed "ToolsTreeMirror=https://download.opensuse.org" "$obs_recipe"
 require_fixed "Profiles=obs-sysupdate" "$obs_recipe"
 require_fixed "WithRecommends=no" "$obs_recipe"
 xmllint --noout .obs/_service.example
+xmllint --noout .obs/project-meta.example.xml
 require_fixed "https://github.com/thefutureisprivate/particleos-webserver.git" .obs/_service.example
 require_fixed "REPLACE_WITH_REVIEWED_COMMIT" .obs/_service.example
 require_fixed "project: home:thefutureisprivate" .obs/workflows.example.yml
+require_fixed '<path project="Fedora:44" repository="update"/>' .obs/project-meta.example.xml
+if rg -n '<path project="Fedora:44" repository="standard"/>' .obs/project-meta.example.xml; then
+    fail "OBS must use Fedora 44 updates rather than the frozen release repository"
+fi
 
 if ! diff -u \
         <({ extract_stanza Packages mkosi.conf; extract_stanza Packages mkosi.conf.d/fedora/mkosi.conf; } | sort -u) \
@@ -183,6 +188,10 @@ fi
 require_fixed "ssl_reject_handshake on"     mkosi.extra/usr/lib/particleos/nginx/conf.d/particleos.conf
 require_fixed "listen 443 quic"     mkosi.extra/usr/share/doc/particleos/nginx/https.conf.example
 require_fixed "add_header Alt-Svc"     mkosi.extra/usr/share/doc/particleos/nginx/https.conf.example
+if rg -n '^[[:space:]]*(max_headers|ssl_certificate_compression)[[:space:]]' \
+        mkosi.extra/usr/lib/particleos/nginx; then
+    fail "nginx config uses directives unavailable in Fedora 44 nginx 1.28"
+fi
 if rg -n '/var/log/nginx' mkosi.extra/usr/lib/particleos/nginx mkosi.extra/usr/lib/systemd/system/nginx.service; then
     fail "nginx logs must use the bounded journal"
 fi
