@@ -78,6 +78,12 @@ for selinux_udev_dropin in "$selinux_udev_service_dropin" "$selinux_udev_kernel_
 done
 require_fixed "systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selinux_udev_service_dropin"
 require_fixed "IgnoreOnIsolate=no" "$selinux_udev_kernel_dropin"
+initrd_config=mkosi.extra/usr/lib/mkosi-initrd/mkosi.conf
+initrd_udev_kernel_dropin=mkosi.extra/usr/lib/particleos/initrd-extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-particleos-switch-root.conf
+require_fixed "ExtraTrees=/usr/lib/particleos/initrd-extra" "$initrd_config"
+require_fixed "IgnoreOnIsolate=no" "$initrd_udev_kernel_dropin"
+reject_fixed "Requires=" "$initrd_udev_kernel_dropin"
+reject_fixed "After=" "$initrd_udev_kernel_dropin"
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }

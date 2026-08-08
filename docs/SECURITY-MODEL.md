@@ -128,6 +128,9 @@ the pre-policy socket itself cannot be repaired by `restorecon`, so the main
 manager recreates it with SELinux active before coldplugging devices. The udev
 daemon explicitly requires both recreated sockets because upstream normally
 relies on the kernel socket surviving switch-root instead of starting it again.
+An initrd-specific mkosi extra tree installs only the preservation override in
+the initrd; main-system dependencies are deliberately excluded until SELinux
+is active and the relabel service exists.
 
 OBS forces mkosi to produce an aggregate checksum before attaching the final
 Secure Boot and verity signatures. A post-output hook removes exactly that
