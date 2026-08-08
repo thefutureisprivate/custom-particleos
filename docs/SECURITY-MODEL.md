@@ -107,8 +107,11 @@ The usr slots are immutable and authenticated. Root and swap are writable only
 after TPM2-backed decryption bound to PCR 7 and the exclusive OBS project
 Secure Boot authority. Expected-PCR signing is deliberately disabled because
 the OBS RSA-4096 signing key cannot be loaded as an external policy key by
-common TPM2 implementations. SELinux relabeling occurs at image build time and
-the installed policy is targeted/enforcing.
+common TPM2 implementations. The mkosi-obs PCR split artifact is explicitly
+reset as well; otherwise mkosi would still embed that public key and
+systemd-repart would automatically add an unusable signed PCR 11 policy to the
+direct PCR 7 policy. SELinux relabeling occurs at image build time and the
+installed policy is targeted/enforcing.
 
 The module-lockdown service starts only after the declared modules and nftables
 policy load. It clears the modprobe helper path and sets

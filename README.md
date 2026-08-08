@@ -122,7 +122,9 @@ That project certificate is the only key enrolled in the image's Secure Boot
 database. Root and swap are bound directly to PCR 7; expected-PCR signing is
 disabled because OBS's RSA-4096 project key is not accepted as an external
 policy key by common TPM2 implementations. The same RSA key remains suitable
-for signing and verifying the IPE policy.
+for signing and verifying the IPE policy. The configuration also resets
+`mkosi-obs`'s implicit PCR split artifact so no unusable `.pcrpkey` is
+embedded and auto-combined with the direct PCR 7 policy.
 
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM
