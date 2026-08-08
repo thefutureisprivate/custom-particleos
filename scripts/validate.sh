@@ -179,6 +179,7 @@ require_fixed "ExecStart=/usr/bin/nginx -e stderr" mkosi.extra/usr/lib/systemd/s
 require_fixed "Type=exec" mkosi.extra/usr/lib/systemd/system/nginx.service
 require_fixed "UMask=0077" mkosi.extra/usr/lib/systemd/system/nginx.service
 require_fixed "install --directory --mode=0700 /run/nginx" mkosi.postinst.chroot
+require_fixed "rm --force /run/nginx/nginx.pid" mkosi.postinst.chroot
 require_fixed "rmdir /run/nginx" mkosi.postinst.chroot
 require_fixed "access_log /dev/stdout" mkosi.extra/usr/lib/particleos/nginx/nginx.conf
 require_fixed "error_log stderr" mkosi.extra/usr/lib/particleos/nginx/nginx.conf

@@ -62,6 +62,7 @@ ln --symbolic --force multi-user.target /usr/lib/systemd/system/default.target
 # that lifecycle only for the build-time configuration test.
 install --directory --mode=0700 /run/nginx
 nginx -e stderr -t -c /usr/lib/particleos/nginx/nginx.conf
+rm --force /run/nginx/nginx.pid
 rmdir /run/nginx
 
 # Give the image a distinct identity without changing Fedora's package identity.
