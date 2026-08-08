@@ -84,7 +84,7 @@ require_fixed "Mirror=https://dl.fedoraproject.org/pub/fedora" "$obs_recipe"
 require_fixed "ToolsTreeMirror=https://download.opensuse.org" "$obs_recipe"
 require_fixed "Profiles=obs-sysupdate" "$obs_recipe"
 require_fixed "WithRecommends=no" "$obs_recipe"
-require_fixed "Checksum=no" "$obs_recipe"
+require_fixed "Checksum=no" mkosi.profiles/obs-sysupdate/mkosi.conf
 xmllint --noout .obs/_service.example
 xmllint --noout .obs/ipe-policy-meta.example.xml
 xmllint --noout .obs/project-meta.example.xml
