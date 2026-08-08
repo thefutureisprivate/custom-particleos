@@ -125,7 +125,9 @@ because systemd enables it at `sysinit.target`; ordering only its socket leaves
 a race during the manager transition out of the initrd. The udev kernel netlink
 socket is not preserved across that transition: unlike a filesystem object,
 the pre-policy socket itself cannot be repaired by `restorecon`, so the main
-manager recreates it with SELinux active before coldplugging devices.
+manager recreates it with SELinux active before coldplugging devices. The udev
+daemon explicitly requires both recreated sockets because upstream normally
+relies on the kernel socket surviving switch-root instead of starting it again.
 
 OBS forces mkosi to produce an aggregate checksum before attaching the final
 Secure Boot and verity signatures. A post-output hook removes exactly that

@@ -76,6 +76,7 @@ for selinux_udev_dropin in "$selinux_udev_service_dropin" "$selinux_udev_kernel_
     require_fixed "Requires=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
     require_fixed "After=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
 done
+require_fixed "systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selinux_udev_service_dropin"
 require_fixed "IgnoreOnIsolate=no" "$selinux_udev_kernel_dropin"
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
