@@ -23,9 +23,10 @@ Exact reference commits are recorded in [NOTICE](./NOTICE).
 
 The default image has:
 
-- OBS-signed Unified Kernel Images, expected-PCR policy signing, Secure Boot,
-  IPE enforcement, and signed dm-verity for the immutable `/usr` slots;
-- TPM2-encrypted writable root and swap partitions;
+- OBS-signed Unified Kernel Images, an exclusive OBS-project Secure Boot trust
+  database, IPE enforcement, and signed dm-verity for the immutable `/usr`
+  slots;
+- TPM2-encrypted writable root and swap partitions bound to Secure Boot PCR 7;
 - Fedora SELinux in enforcing targeted mode;
 - GrapheneOS- and secureblue-derived kernel, allocator, TCP, nftables, chrony,
   OpenSSH, nginx, and systemd service hardening;
@@ -100,9 +101,12 @@ and its
    ```
 
 The recipe includes `mkosi-obs` and carries `# needssslcertforbuild`. OBS
-therefore supplies the project certificate to sign the bootloader, UKIs,
-expected PCR policy, and dm-verity metadata without exposing the project private
-key to this repository.
+therefore supplies the project certificate to sign the bootloader, UKIs, and
+dm-verity metadata without exposing the project private key to this repository.
+That project certificate is the only key enrolled in the image's Secure Boot
+database. Root and swap are bound directly to PCR 7; expected-PCR signing is
+disabled because OBS's RSA-4096 project key is not accepted as an external
+policy key by common TPM2 implementations.
 
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM
@@ -137,12 +141,16 @@ flow on port 53.
 The virtual machine must expose UEFI Secure Boot and a TPM2-compatible vTPM.
 Guest microcode packages are intentionally omitted: CPU microcode is the VPS
 hypervisor/provider's responsibility. Put Secure Boot into setup mode before
-the first boot so the OBS project certificate and included
-Microsoft UEFI certificates can be enrolled. Protect the firmware settings
-with an administrator password afterward.
+the first boot so the OBS project certificate can be enrolled as the exclusive
+Secure Boot database key. Protect the firmware settings with an administrator
+password afterward.
 
 Import or write the OBS raw disk image directly to the VPS boot volume. The
-production UKI intentionally contains no interactive or destructive installer
+boot volume must be expanded to at least 8 GiB before the first boot so
+systemd-repart has space to create the 2 GiB encrypted swap and writable root
+partitions. Booting the unexpanded transport image cannot complete
+provisioning. The production UKI intentionally contains no interactive or
+destructive installer
 profile. On first boot, the console wizard creates a LUKS-backed systemd-homed
 administrator. The account is added to `wheel` and `systemd-journal`; no fixed
 account or password is built into the image.

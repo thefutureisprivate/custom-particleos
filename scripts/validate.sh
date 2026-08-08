@@ -39,7 +39,16 @@ require_fixed "SELinuxRelabel=yes" mkosi.conf
 require_fixed "WithDocs=no" mkosi.conf
 require_fixed "WithRecommends=no" mkosi.conf
 require_fixed "SecureBoot=yes" mkosi.conf
-require_fixed "SignExpectedPcr=yes" mkosi.conf
+require_fixed "SignExpectedPcr=no" mkosi.conf
+require_fixed "SignExpectedPcr=no" mkosi.uki-profiles/95-emergency.conf
+require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
+require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
+if rg -n '^SignExpectedPcr=(yes|true|1)$' mkosi.conf mkosi.uki-profiles; then
+    fail "expected-PCR signing is incompatible with the OBS RSA-4096 project key"
+fi
+if find mkosi.uefi.db mkosi.uefi.KEK -type f -print 2>/dev/null | grep -q .; then
+    fail "only the mkosi-obs project certificate may be enrolled in UEFI"
+fi
 require_fixed "ipe.enforce=1" mkosi.conf
 require_fixed "lockdown=confidentiality" mkosi.conf
 for kernel_argument in \

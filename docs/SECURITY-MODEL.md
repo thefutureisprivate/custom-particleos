@@ -31,7 +31,8 @@ what the image alone can guarantee.
    enables lockdown confidentiality mode, IPE enforcement, auditing, SELinux,
    and signed dm-verity discovery.
 3. The signed verity metadata authenticates the immutable usr partition.
-4. TPM2 policies unlock encrypted root and swap on the expected measured boot.
+4. TPM2 PCR 7 policies unlock encrypted root and swap only while UEFI Secure
+   Boot uses the enrolled OBS project certificate.
 5. systemd-sysupdate writes complete A/B usr, verity, signature, and UKI
    artifacts; boot counting retains a fallback instance.
 
@@ -42,6 +43,14 @@ the Web PKI are DNS confidentiality and availability trust roots; DNSSEC
 validation remains local. OBS keeps its project private key outside this
 repository.
 
+The UEFI database intentionally contains only the current OBS project
+certificate. Microsoft and generic distribution certificates are excluded so
+code signed by a broader authority cannot reproduce the PCR 7 trust state and
+obtain the disk key. PCR 7 provides update-stable binding to this project's
+Secure Boot authority, but it does not by itself prevent rollback to an older
+UKI signed by the same project key. OBS source pinning, signed dm-verity, update
+policy, and release operations remain responsible for rollback control.
+
 This image targets VPS guests only. It does not install CPU microcode payloads,
 because the physical host's microcode is controlled by the VPS provider. The
 provider's hypervisor, host kernel, CPU microcode, and virtual firmware are
@@ -51,7 +60,7 @@ therefore explicit lower-layer trust dependencies.
 
 | Area | Default | Primary source |
 |---|---|---|
-| Image layout | Signed UKI, A/B usr, dm-verity, TPM2 root and swap | systemd/particleos |
+| Image layout | Project-key-only Secure Boot, signed UKI, A/B usr, dm-verity, PCR 7-bound TPM2 root and swap | systemd/particleos |
 | Kernel command line | audit, SELinux enforcing, IPE, lockdown, signed modules, allocation/free initialization, stack/allocator randomization, no initrd shell, vsyscall, or IA-32 emulation | particleOS plus GrapheneOS and secureblue policy |
 | Kernel runtime | SELinux plus irreversible Yama ptrace denial, disabled user namespaces, irreversible unprivileged BPF and io_uring denial, restricted perf, kexec, kernel logs, core dumps, and module loading | GrapheneOS infrastructure and secureblue |
 | Memory allocator | signed secureblue `hardened_malloc` package globally preloaded with `no_rlimit_as` for managed services | secureblue |
@@ -89,7 +98,10 @@ future review and reconciliation explicit.
 ## Boot and kernel policy
 
 The usr slots are immutable and authenticated. Root and swap are writable only
-after TPM2-backed decryption. SELinux relabeling occurs at image build time and
+after TPM2-backed decryption bound to PCR 7 and the exclusive OBS project
+Secure Boot authority. Expected-PCR signing is deliberately disabled because
+the OBS RSA-4096 signing key cannot be loaded as an external policy key by
+common TPM2 implementations. SELinux relabeling occurs at image build time and
 the installed policy is targeted/enforcing.
 
 The module-lockdown service starts only after the declared modules and nftables
