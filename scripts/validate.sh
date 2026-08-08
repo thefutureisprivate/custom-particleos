@@ -178,6 +178,8 @@ require_fixed "Requires=nftables.service particleos-module-lockdown.service"    
 require_fixed "ExecStart=/usr/bin/nginx -e stderr" mkosi.extra/usr/lib/systemd/system/nginx.service
 require_fixed "Type=exec" mkosi.extra/usr/lib/systemd/system/nginx.service
 require_fixed "UMask=0077" mkosi.extra/usr/lib/systemd/system/nginx.service
+require_fixed "install --directory --mode=0700 /run/nginx" mkosi.postinst.chroot
+require_fixed "rmdir /run/nginx" mkosi.postinst.chroot
 require_fixed "access_log /dev/stdout" mkosi.extra/usr/lib/particleos/nginx/nginx.conf
 require_fixed "error_log stderr" mkosi.extra/usr/lib/particleos/nginx/nginx.conf
 require_fixed "return 404;" mkosi.extra/usr/lib/particleos/nginx/conf.d/particleos.conf

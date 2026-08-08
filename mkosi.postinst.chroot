@@ -58,7 +58,11 @@ fi
 # Keep the installed host headless.
 ln --symbolic --force multi-user.target /usr/lib/systemd/system/default.target
 
+# systemd creates this private runtime directory before ExecStartPre. Mirror
+# that lifecycle only for the build-time configuration test.
+install --directory --mode=0700 /run/nginx
 nginx -e stderr -t -c /usr/lib/particleos/nginx/nginx.conf
+rmdir /run/nginx
 
 # Give the image a distinct identity without changing Fedora's package identity.
 (
