@@ -126,10 +126,10 @@ for signing and verifying the IPE policy. The configuration also resets
 `mkosi-obs`'s implicit PCR split artifact so no unusable `.pcrpkey` is
 embedded and auto-combined with the direct PCR 7 policy. The roothash,
 OS-release, and repartition definitions remain split for OBS's two-pass
-dm-verity signing. The OBS recipe disables the mkosi first-pass aggregate
-SHA256SUMS, which becomes stale when OBS attaches signatures in the second
-pass. Release verification uses the project-signed final per-artifact SHA-256
-files from OBS instead.
+dm-verity signing. OBS forces mkosi to create a first-pass SHA256SUMS aggregate,
+which becomes stale when OBS attaches signatures in the second pass. A guarded
+post-output hook discards only that aggregate before publication. Release
+verification uses the project-signed final per-artifact SHA-256 files from OBS.
 
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM

@@ -84,7 +84,10 @@ require_fixed "Mirror=https://dl.fedoraproject.org/pub/fedora" "$obs_recipe"
 require_fixed "ToolsTreeMirror=https://download.opensuse.org" "$obs_recipe"
 require_fixed "Profiles=obs-sysupdate" "$obs_recipe"
 require_fixed "WithRecommends=no" "$obs_recipe"
-require_fixed "Checksum=no" mkosi.profiles/obs-sysupdate/mkosi.conf
+checksum_hook=mkosi.postoutput.d/90-remove-first-pass-checksum
+test -x "$checksum_hook" || fail "$checksum_hook must be executable"
+require_fixed "Refusing unsafe checksum path" "$checksum_hook"
+require_fixed "rm -f --" "$checksum_hook"
 xmllint --noout .obs/_service.example
 xmllint --noout .obs/ipe-policy-meta.example.xml
 xmllint --noout .obs/project-meta.example.xml

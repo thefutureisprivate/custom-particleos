@@ -1,0 +1,14 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+: "${OUTPUTDIR:?}"
+: "${MKOSI_CONFIG:?}"
+
+output=$(jq --exit-status --raw-output ".Output | select(type == \"string\" and length > 0)" "$MKOSI_CONFIG")
+if [[ "$OUTPUTDIR" != /* || "$OUTPUTDIR" == / || "$output" == */* || "$output" == . || "$output" == .. ]]; then
+    printf "Refusing unsafe checksum path: OUTPUTDIR=%s Output=%s\n" "$OUTPUTDIR" "$output" >&2
+    exit 1
+fi
+
+checksum="${OUTPUTDIR}/${output}.SHA256SUMS"
+rm -f -- "$checksum"
