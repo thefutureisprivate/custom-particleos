@@ -118,8 +118,9 @@ The encrypted root is populated from a minimal factory skeleton whose root,
 symlink are labeled against their future paths at build time. `systemd-repart`
 preserves those SELinux extended attributes, so PID 1 can load the immutable
 policy before switch-root without leaving the fresh writable filesystem
-unlabeled. The same targeted policy is present in the initrd, ensuring udev and
-other runtime state are labeled before they are carried across switch-root.
+unlabeled. Because the cpio initrd cannot preserve SELinux xattrs, its inherited
+`/dev` and `/run/udev` trees are relabeled immediately after switch-root and
+before the main udev varlink socket starts.
 
 OBS forces mkosi to produce an aggregate checksum before attaching the final
 Secure Boot and verity signatures. A post-output hook removes exactly that

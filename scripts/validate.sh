@@ -59,10 +59,18 @@ require_fixed "ln -sfn /usr/share/factory/etc/selinux" mkosi.finalize
 require_fixed "chroot \"\$BUILDROOT\" /usr/sbin/setfiles -F" mkosi.finalize
 require_fixed "-r /usr/share/factory/root" mkosi.finalize
 for initrd_config in mkosi.conf.d/fedora/mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
-    if ! extract_stanza "InitrdPackages" "$initrd_config" | grep -Fxq selinux-policy-targeted; then
-        fail "$initrd_config must include the SELinux policy in the initrd"
+    if extract_stanza "InitrdPackages" "$initrd_config" | grep -Fxq selinux-policy-targeted; then
+        fail "$initrd_config must not load enforcing policy from an unlabeled cpio initrd"
     fi
 done
+selinux_relabel_unit=mkosi.extra/usr/lib/systemd/system/particleos-selinux-runtime-relabel.service
+selinux_udev_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd-varlink.socket.d/10-selinux-runtime-relabel.conf
+require_fixed "DefaultDependencies=no" "$selinux_relabel_unit"
+require_fixed "ConditionSecurity=selinux" "$selinux_relabel_unit"
+require_fixed "ExecStart=/usr/sbin/restorecon -RF /dev /run/udev" "$selinux_relabel_unit"
+require_fixed "Before=systemd-udevd-varlink.socket" "$selinux_relabel_unit"
+require_fixed "Requires=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
+require_fixed "After=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }

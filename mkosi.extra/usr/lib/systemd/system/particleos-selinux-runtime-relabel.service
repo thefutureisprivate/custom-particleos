@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Relabel initrd runtime state after switch-root
+Documentation=man:restorecon(8)
+DefaultDependencies=no
+ConditionSecurity=selinux
+ConditionPathExists=/run/udev
+Before=systemd-udevd-varlink.socket
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/restorecon -RF /dev /run/udev
