@@ -58,6 +58,11 @@ require_fixed "root_skeleton=\"\$BUILDROOT/usr/share/factory/root\"" mkosi.final
 require_fixed "ln -sfn /usr/share/factory/etc/selinux" mkosi.finalize
 require_fixed "chroot \"\$BUILDROOT\" /usr/sbin/setfiles -F" mkosi.finalize
 require_fixed "-r /usr/share/factory/root" mkosi.finalize
+for initrd_config in mkosi.conf.d/fedora/mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
+    if ! extract_stanza "InitrdPackages" "$initrd_config" | grep -Fxq selinux-policy-targeted; then
+        fail "$initrd_config must include the SELinux policy in the initrd"
+    fi
+done
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }
