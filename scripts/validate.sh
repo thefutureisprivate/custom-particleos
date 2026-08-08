@@ -43,16 +43,18 @@ require_fixed "SignExpectedPcr=no" mkosi.conf
 require_fixed "SignExpectedPcr=no" mkosi.uki-profiles/95-emergency.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
-if ! awk '
-        $0 == "SplitArtifacts=" { reset = 1; next }
-        reset && $0 == "SplitArtifacts=uki,partitions" { found = 1 }
-        END { exit !found }
-    ' mkosi.conf; then
-    fail "SplitArtifacts must reset mkosi-obs PCR artifacts before selecting uki and partitions"
-fi
-if grep -Eq '^SplitArtifacts=(.*,)?pcrs(,|$)' mkosi.conf; then
-    fail "PCR artifacts would embed the OBS RSA-4096 key as an unusable TPM policy key"
-fi
+for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
+    if ! awk '
+            $0 == "SplitArtifacts=" { reset = 1; next }
+            reset && $0 == "SplitArtifacts=uki,partitions" { found = 1 }
+            END { exit !found }
+        ' "$split_config"; then
+        fail "$split_config must reset mkosi-obs PCR artifacts before selecting uki and partitions"
+    fi
+    if grep -Eq '^SplitArtifacts=(.*,)?pcrs(,|$)' "$split_config"; then
+        fail "$split_config embeds the OBS RSA-4096 key as an unusable TPM policy key"
+    fi
+done
 if rg -n '^SignExpectedPcr=(yes|true|1)$' mkosi.conf mkosi.uki-profiles; then
     fail "expected-PCR signing is incompatible with the OBS RSA-4096 project key"
 fi
