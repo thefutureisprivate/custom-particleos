@@ -124,7 +124,9 @@ disabled because OBS's RSA-4096 project key is not accepted as an external
 policy key by common TPM2 implementations. The same RSA key remains suitable
 for signing and verifying the IPE policy. The configuration also resets
 `mkosi-obs`'s implicit PCR split artifact so no unusable `.pcrpkey` is
-embedded and auto-combined with the direct PCR 7 policy.
+embedded and auto-combined with the direct PCR 7 policy. The roothash,
+OS-release, and repartition definitions remain split for OBS's two-pass
+dm-verity signing.
 
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM

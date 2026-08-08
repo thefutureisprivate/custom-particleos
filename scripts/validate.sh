@@ -46,10 +46,10 @@ require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }
-            reset && $0 == "SplitArtifacts=uki,partitions" { found = 1 }
+            reset && $0 == "SplitArtifacts=uki,partitions,roothash,os-release,repart-definitions" { found = 1 }
             END { exit !found }
         ' "$split_config"; then
-        fail "$split_config must reset mkosi-obs PCR artifacts before selecting uki and partitions"
+        fail "$split_config must preserve OBS verity inputs while excluding PCR artifacts"
     fi
     if grep -Eq '^SplitArtifacts=(.*,)?pcrs(,|$)' "$split_config"; then
         fail "$split_config embeds the OBS RSA-4096 key as an unusable TPM policy key"
@@ -64,6 +64,7 @@ fi
 require_fixed "ipe.enforce=1" mkosi.conf
 require_fixed "lockdown=confidentiality" mkosi.conf
 for kernel_argument in \
+        audit_backlog_limit=8192 \
         init_on_alloc=1 \
         init_on_free=1 \
         page_alloc.shuffle=1 \

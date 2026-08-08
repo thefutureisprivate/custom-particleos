@@ -110,8 +110,9 @@ the OBS RSA-4096 signing key cannot be loaded as an external policy key by
 common TPM2 implementations. The mkosi-obs PCR split artifact is explicitly
 reset as well; otherwise mkosi would still embed that public key and
 systemd-repart would automatically add an unusable signed PCR 11 policy to the
-direct PCR 7 policy. SELinux relabeling occurs at image build time and the
-installed policy is targeted/enforcing.
+direct PCR 7 policy. The non-PCR split metadata required for OBS's two-pass
+dm-verity signing is retained. SELinux relabeling occurs at image build time
+and the installed policy is targeted/enforcing.
 
 The module-lockdown service starts only after the declared modules and nftables
 policy load. It clears the modprobe helper path and sets
