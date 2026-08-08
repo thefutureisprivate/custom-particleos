@@ -51,9 +51,13 @@ require_fixed "SignExpectedPcr=no" mkosi.conf
 require_fixed "SignExpectedPcr=no" mkosi.uki-profiles/95-emergency.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
-require_fixed "MakeDirectories=/etc /home /var/log/journal" mkosi.extra/usr/lib/repart.d/40-root.conf
-require_fixed "MakeSymlinks=/etc/selinux:/usr/share/factory/etc/selinux" mkosi.extra/usr/lib/repart.d/40-root.conf
-reject_fixed "MakeSymlinks=/usr/share/factory/etc/selinux:/etc/selinux" mkosi.extra/usr/lib/repart.d/40-root.conf
+require_fixed "CopyFiles=/usr/share/factory/root:/" mkosi.extra/usr/lib/repart.d/40-root.conf
+reject_fixed "MakeDirectories=" mkosi.extra/usr/lib/repart.d/40-root.conf
+reject_fixed "MakeSymlinks=" mkosi.extra/usr/lib/repart.d/40-root.conf
+require_fixed "root_skeleton=\"\$BUILDROOT/usr/share/factory/root\"" mkosi.finalize
+require_fixed "ln -sfn /usr/share/factory/etc/selinux" mkosi.finalize
+require_fixed "chroot \"\$BUILDROOT\" /usr/sbin/setfiles -F" mkosi.finalize
+require_fixed "-r /usr/share/factory/root" mkosi.finalize
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }
