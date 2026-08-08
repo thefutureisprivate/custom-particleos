@@ -15,6 +15,14 @@ require_fixed() {
         fail "$file does not contain required setting: $needle"
 }
 
+reject_fixed() {
+    local needle=$1
+    local file=$2
+    if grep -Fq -- "$needle" "$file"; then
+        fail "$file contains forbidden setting: $needle"
+    fi
+}
+
 extract_stanza() {
     local stanza=$1
     local file=$2
@@ -43,7 +51,8 @@ require_fixed "SignExpectedPcr=no" mkosi.conf
 require_fixed "SignExpectedPcr=no" mkosi.uki-profiles/95-emergency.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
-require_fixed "MakeSymlinks=/usr/share/factory/etc/selinux:/etc/selinux" mkosi.extra/usr/lib/repart.d/40-root.conf
+require_fixed "MakeSymlinks=/etc/selinux:/usr/share/factory/etc/selinux" mkosi.extra/usr/lib/repart.d/40-root.conf
+reject_fixed "MakeSymlinks=/usr/share/factory/etc/selinux:/etc/selinux" mkosi.extra/usr/lib/repart.d/40-root.conf
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }
