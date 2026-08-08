@@ -114,6 +114,11 @@ direct PCR 7 policy. The non-PCR split metadata required for OBS's two-pass
 dm-verity signing is retained. SELinux relabeling occurs at image build time
 and the installed policy is targeted/enforcing.
 
+The OBS build disables the mkosi aggregate checksum because it is produced
+before OBS attaches the final Secure Boot and verity signatures. Every
+published final artifact is instead verified against its OBS-generated,
+project-signed SHA-256 file.
+
 The module-lockdown service starts only after the declared modules and nftables
 policy load. It clears the modprobe helper path and sets
 `kernel.modules_disabled=1`, which cannot be reversed until reboot. This
@@ -235,7 +240,8 @@ systemd sandbox, SELinux policy, and update plan.
 A release is not complete until the exact OBS artifact has been:
 
 1. built from an immutable reviewed commit;
-2. checked for successful package signature and image manifest generation;
+2. checked against every OBS project-signed per-artifact SHA-256 file and
+   inspected for successful image manifest generation;
 3. installed and booted with Secure Boot, TPM2 encryption, dm-verity, IPE, and
    SELinux enforcement active;
 4. tested for firewall fail-closed behavior, DoT-only resolver egress, local
