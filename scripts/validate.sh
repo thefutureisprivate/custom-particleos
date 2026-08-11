@@ -95,8 +95,8 @@ require_fixed "Output=initrd" "$initrd_config"
 for main_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     require_fixed "Dependencies=initrd" "$main_config"
     require_fixed "Initrds=%O/initrd" "$main_config"
-    reject_fixed "InitrdPackages=" "$main_config"
 done
+reject_fixed "InitrdPackages=" mkosi.conf
 require_fixed "IgnoreOnIsolate=no" "$initrd_udev_kernel_dropin"
 reject_fixed "Requires=" "$initrd_udev_kernel_dropin"
 reject_fixed "After=" "$initrd_udev_kernel_dropin"
@@ -163,6 +163,12 @@ if ! diff -u \
         <({ extract_stanza Packages mkosi.conf; extract_stanza Packages mkosi.conf.d/fedora/mkosi.conf; } | sort -u) \
         <(extract_stanza Packages "$obs_recipe" | sort -u); then
     fail "OBS Packages= must equal the main and Fedora package union"
+fi
+
+if ! diff -u \
+        <(extract_stanza Packages "$initrd_config" | sort -u) \
+        <(extract_stanza InitrdPackages "$obs_recipe" | sort -u); then
+    fail "OBS InitrdPackages= must expose the custom initrd package set to the build-local mirror"
 fi
 
 for recipe in mkosi.conf "$obs_recipe"; do
