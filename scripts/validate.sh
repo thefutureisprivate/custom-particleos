@@ -58,9 +58,20 @@ require_fixed "root_skeleton=\"\$BUILDROOT/usr/share/factory/root\"" mkosi.final
 require_fixed "ln -sfn /usr/share/factory/etc/selinux" mkosi.finalize
 require_fixed "chroot \"\$BUILDROOT\" /usr/sbin/setfiles -F" mkosi.finalize
 require_fixed "-r /usr/share/factory/root" mkosi.finalize
-for initrd_config in mkosi.conf.d/fedora/mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
-    if extract_stanza "InitrdPackages" "$initrd_config" | grep -Fxq selinux-policy-targeted; then
-        fail "$initrd_config must not load enforcing policy from an unlabeled cpio initrd"
+initrd_config=mkosi.images/initrd/mkosi.conf
+if extract_stanza "Packages" "$initrd_config" | grep -Fxq selinux-policy-targeted; then
+    fail "$initrd_config must not load enforcing policy from an unlabeled cpio initrd"
+fi
+initrd_packages=$(extract_stanza "Packages" "$initrd_config")
+for required_initrd_package in ipe-policy libfdisk; do
+    if ! grep -Fxq "$required_initrd_package" <<<"$initrd_packages"; then
+        fail "$required_initrd_package is missing from the custom initrd"
+    fi
+done
+initrd_volatile_packages=$(extract_stanza "VolatilePackages" "$initrd_config")
+for required_initrd_volatile_package in systemd udev; do
+    if ! grep -Fxq "$required_initrd_volatile_package" <<<"$initrd_volatile_packages"; then
+        fail "$required_initrd_volatile_package must remain volatile in the custom initrd"
     fi
 done
 selinux_relabel_unit=mkosi.extra/usr/lib/systemd/system/particleos-selinux-runtime-relabel.service
@@ -78,9 +89,14 @@ for selinux_udev_dropin in "$selinux_udev_service_dropin" "$selinux_udev_kernel_
 done
 require_fixed "systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selinux_udev_service_dropin"
 require_fixed "IgnoreOnIsolate=no" "$selinux_udev_kernel_dropin"
-initrd_config=mkosi.extra/usr/lib/mkosi-initrd/mkosi.conf
-initrd_udev_kernel_dropin=mkosi.extra/usr/lib/particleos/initrd-extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-particleos-switch-root.conf
-require_fixed "ExtraTrees=/usr/lib/particleos/initrd-extra" "$initrd_config"
+initrd_udev_kernel_dropin=mkosi.images/initrd/mkosi.extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-particleos-switch-root.conf
+require_fixed "Include=mkosi-initrd" "$initrd_config"
+require_fixed "Output=initrd" "$initrd_config"
+for main_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
+    require_fixed "Dependencies=initrd" "$main_config"
+    require_fixed "Initrds=%O/initrd" "$main_config"
+    reject_fixed "InitrdPackages=" "$main_config"
+done
 require_fixed "IgnoreOnIsolate=no" "$initrd_udev_kernel_dropin"
 reject_fixed "Requires=" "$initrd_udev_kernel_dropin"
 reject_fixed "After=" "$initrd_udev_kernel_dropin"
@@ -147,12 +163,6 @@ if ! diff -u \
         <({ extract_stanza Packages mkosi.conf; extract_stanza Packages mkosi.conf.d/fedora/mkosi.conf; } | sort -u) \
         <(extract_stanza Packages "$obs_recipe" | sort -u); then
     fail "OBS Packages= must equal the main and Fedora package union"
-fi
-
-if ! diff -u \
-        <(extract_stanza InitrdPackages mkosi.conf.d/fedora/mkosi.conf | sort -u) \
-        <(extract_stanza InitrdPackages "$obs_recipe" | sort -u); then
-    fail "OBS InitrdPackages= must equal the Fedora initrd package set"
 fi
 
 for recipe in mkosi.conf "$obs_recipe"; do
