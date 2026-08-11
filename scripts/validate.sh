@@ -238,6 +238,8 @@ fi
 require_fixed "/usr/lib/particleos/sysupdate-key-source/particleos-obs-pubkey.gpg" \
     mkosi.postinst.chroot
 require_fixed "/usr/lib/systemd/import-pubring.pgp" mkosi.postinst.chroot
+require_fixed "gpg --batch --yes --dearmor" mkosi.postinst.chroot
+require_fixed "chmod 0644 /usr/lib/systemd/import-pubring.pgp" mkosi.postinst.chroot
 for disabled_container_unit in \
         machines.target \
         systemd-importd.socket \

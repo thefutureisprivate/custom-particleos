@@ -6,11 +6,13 @@ authselect select local
 authselect enable-feature with-systemd-homed
 
 # systemd-pull verifies OBS's signed SHA256SUMS with this exclusive project
-# key. Install it before mkosi's SELinux relabel pass and replace the generic
-# key shipped by systemd-container.
-install -m 0644 \
-    /usr/lib/particleos/sysupdate-key-source/particleos-obs-pubkey.gpg \
-    /usr/lib/systemd/import-pubring.pgp
+# key. Its gpg --keyring interface requires the binary OpenPGP form, so dearmor
+# the pinned repository key before mkosi's SELinux relabel pass and replace the
+# generic key shipped by systemd-container.
+gpg --batch --yes --dearmor \
+    --output /usr/lib/systemd/import-pubring.pgp \
+    /usr/lib/particleos/sysupdate-key-source/particleos-obs-pubkey.gpg
+chmod 0644 /usr/lib/systemd/import-pubring.pgp
 
 # mkosi.extra installs the final runtime preload before this script runs.
 # SELinux policy compilation is memory-intensive and must use the system
