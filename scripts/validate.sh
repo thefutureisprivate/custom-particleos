@@ -301,6 +301,8 @@ reject_fixed "enable sshd-keygen.target" \
     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/sshd-keygen.target"' \
     mkosi.finalize
+require_fixed "system_u:object_r:bootloader_exec_t:s0" mkosi.finalize
+require_fixed "/usr/lib/systemd/systemd-bless-boot" mkosi.finalize
 sshd_keygen_dropin=mkosi.extra/usr/lib/systemd/system/sshd-keygen@.service.d/40-particleos-hardening.conf
 require_fixed "CapabilityBoundingSet=" "$sshd_keygen_dropin"
 require_fixed "ExecStartPost=/usr/bin/test -s /etc/ssh/ssh_host_ed25519_key" \

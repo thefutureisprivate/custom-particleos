@@ -13,6 +13,15 @@ ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"
 # vendor sshd@ unit.
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/sshd-keygen.target"
 
+# Fedora's generic /usr/lib/systemd rule labels systemd-bless-boot as
+# init_exec_t. PID 1 consequently runs it in init_t, which may read the ESP but
+# cannot rename the boot-counted UKI after a successful update. Use the
+# policy's dedicated bootloader transition: bootloader_t has the narrowly
+# scoped DOS filesystem permissions required to mark the new slot as good.
+chroot "$BUILDROOT" /usr/bin/chcon \
+    system_u:object_r:bootloader_exec_t:s0 \
+    /usr/lib/systemd/systemd-bless-boot
+
 # Capture the entirety of /etc in /usr/share/factory/etc so we can use
 # systemd-tmpfiles to symlink individual directories from it to /etc.
 mkdir -p "$BUILDROOT/usr/share/factory/"
