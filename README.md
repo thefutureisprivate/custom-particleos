@@ -218,7 +218,9 @@ run0 --user=certbot -- certbot certonly \
 Certbot requires the ACME `shortlived` profile and defaults to the nginx
 webroot, an ECDSA P-384 key, and HTTP-01. The renewal service can write only the
 pre-created `/var/www/html/.well-known/acme-challenge` leaf, not the rest of the
-site. Its state is owned by the dedicated `certbot` account under
+site. The setgid challenge directory gives new tokens the `nginx` group and
+mode 0640, so workers can serve them without gaining write access. Certbot's
+private state remains owned by the dedicated `certbot` account under
 `/etc/letsencrypt`; nginx's root master can read private keys but its workers
 cannot write them.
 

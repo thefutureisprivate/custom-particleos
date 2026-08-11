@@ -278,10 +278,14 @@ Mutable operator-controlled paths are intentionally limited:
 Configuration under `/usr/lib/particleos` changes only through a new signed
 image. Certbot state and TLS private keys are owned by the non-login `certbot`
 account. nginx's root master reads certificates during start/reload; workers do
-not receive write access. Renewal cannot access the systemd manager socket and
-can only request the fixed validator/reloader by creating a watched runtime
-file. Certbot can create only IPv4 and IPv6 sockets; AF_UNIX is excluded, making
-the systemd and D-Bus manager sockets unreachable without hiding
+not receive write access. The challenge leaf is setgid `certbot:nginx` mode
+2750 and renewal uses umask 0027, so newly created HTTP-01 tokens are
+`certbot:nginx` mode 0640. This read-only group bridge applies only to the
+public challenge leaf; private Certbot directories remain inaccessible to
+nginx workers. Renewal cannot access the systemd manager socket and can only
+request the fixed validator/reloader by creating a watched runtime file.
+Certbot can create only IPv4 and IPv6 sockets; AF_UNIX is excluded, making the
+systemd and D-Bus manager sockets unreachable without hiding
 `/run/systemd/resolve`, which `/etc/resolv.conf` needs for ACME DNS lookups.
 
 ## nginx scope

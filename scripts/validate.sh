@@ -266,7 +266,9 @@ require_fixed "EnvironmentFile=" \
 require_fixed "User=certbot" mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
 require_fixed "RestrictAddressFamilies=AF_INET AF_INET6"     mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
 reject_fixed "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX"     mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
-require_fixed "UMask=0077" mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
+require_fixed "UMask=0027" mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
+require_fixed "d /var/www/html/.well-known/acme-challenge 2750 certbot nginx -" \
+    mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 require_fixed "PathExists=/run/particleos-certbot/reload-request"     mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.path
 require_fixed "ExecStartPre=/usr/bin/nginx -e stderr -t -q"     mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.service
 require_fixed "policy drop" mkosi.extra/usr/lib/particleos/nftables.conf
