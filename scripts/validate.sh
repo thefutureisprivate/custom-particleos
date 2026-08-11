@@ -277,6 +277,9 @@ require_fixed "pam_systemd_home\\.so" mkosi.postinst.chroot
 require_fixed "pam_unix\\.so/i auth" mkosi.postinst.chroot
 require_fixed "PermitRootLogin no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PasswordAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
+require_fixed "HostKey /etc/ssh/ssh_host_ed25519_key"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
+require_fixed "PermitListen none"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
+require_fixed "PermitOpen none"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 sshd_template_dropin=mkosi.extra/usr/lib/systemd/system/sshd@.service.d/40-particleos-hardening.conf
 require_fixed "Requires=nftables.service particleos-module-lockdown.service" "$sshd_template_dropin"
 require_fixed "NoNewPrivileges=no" "$sshd_template_dropin"
@@ -288,10 +291,25 @@ sshd_socket_dropin=mkosi.extra/usr/lib/systemd/system/sshd.socket.d/40-particleo
 require_fixed "DefaultDependencies=no" "$sshd_socket_dropin"
 require_fixed "Requires=nftables.service particleos-module-lockdown.service" "$sshd_socket_dropin"
 require_fixed "After=nftables.service particleos-module-lockdown.service" "$sshd_socket_dropin"
+require_fixed "Requires=sshd-keygen@ed25519.service" "$sshd_socket_dropin"
+require_fixed "After=sshd-keygen@ed25519.service" "$sshd_socket_dropin"
 require_fixed "Before=shutdown.target" "$sshd_socket_dropin"
 require_fixed "Conflicts=shutdown.target" "$sshd_socket_dropin"
 require_fixed "ListenStream=0.0.0.0:22" "$sshd_socket_dropin"
 require_fixed "ListenStream=[::]:22" "$sshd_socket_dropin"
+reject_fixed "enable sshd-keygen.target" \
+    mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
+require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/sshd-keygen.target"' \
+    mkosi.finalize
+sshd_keygen_dropin=mkosi.extra/usr/lib/systemd/system/sshd-keygen@.service.d/40-particleos-hardening.conf
+require_fixed "CapabilityBoundingSet=" "$sshd_keygen_dropin"
+require_fixed "ExecStartPost=/usr/bin/test -s /etc/ssh/ssh_host_ed25519_key" \
+    "$sshd_keygen_dropin"
+require_fixed "NoNewPrivileges=no" "$sshd_keygen_dropin"
+require_fixed "ProtectSystem=strict" "$sshd_keygen_dropin"
+require_fixed "ReadWritePaths=/etc/ssh" "$sshd_keygen_dropin"
+require_fixed "RestrictAddressFamilies=AF_UNIX" "$sshd_keygen_dropin"
+require_fixed "SystemCallFilter=@system-service" "$sshd_keygen_dropin"
 if [[ -e mkosi.extra/usr/lib/systemd/system/sshd.service.d/40-particleos-hardening.conf ]]; then
     fail "the disabled monolithic sshd.service must not carry the socket-template hardening"
 fi
@@ -388,7 +406,6 @@ require_fixed "kernel.io_uring_disabled = 2" mkosi.extra/usr/lib/sysctl.d/70-par
 require_fixed "kernel.unprivileged_bpf_disabled = 2" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.yama.ptrace_scope = 3" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "vm.memfd_noexec = 1" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
-require_fixed "kernel.unprivileged_userns_clone = 0" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "user.max_user_namespaces = 64" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "disable chrony-wait.service"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed "kernel.core_pattern = |/bin/false" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf

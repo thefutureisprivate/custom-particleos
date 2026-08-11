@@ -7,6 +7,12 @@ set -e
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"
 
+# Fedora's per-connection SSH unit wants this static target, which would create
+# RSA and ECDSA host keys alongside Ed25519. The socket requires the exact
+# Ed25519 generator directly, so mask the broad target without duplicating the
+# vendor sshd@ unit.
+ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/sshd-keygen.target"
+
 # Capture the entirety of /etc in /usr/share/factory/etc so we can use
 # systemd-tmpfiles to symlink individual directories from it to /etc.
 mkdir -p "$BUILDROOT/usr/share/factory/"

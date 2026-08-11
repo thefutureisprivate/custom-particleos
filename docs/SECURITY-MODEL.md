@@ -166,9 +166,11 @@ SELinux policy denies their creation to every domain except `kernel_t`,
 `init_t`, `systemd_importd_t`, and `systemd_homework_t`. The latter two are
 Fedora's confined helper domains for systemd-sysupdate and systemd-homed.
 Login users, `run0` shells, and all other shipped service domains remain
-denied. The kernel's unprivileged-userns sysctl is also disabled when the
-running kernel exposes it. No container runtime is installed. Fedora's
-`chrony-wait.service` is explicitly disabled. Kexec,
+denied. Fedora's current kernel no longer exposes the obsolete
+`kernel.unprivileged_userns_clone` sysctl, so the image relies on the tested
+SELinux rule while retaining a low global namespace ceiling for those helpers.
+No container runtime is installed. Fedora's `chrony-wait.service` is
+explicitly disabled. Kexec,
 userfaultfd,
 executable memfd fallback, kernel pointers/logs, SysRq, unsafe line-discipline
 autoload, and core dumps are disabled or restricted. Core dumping is denied by
@@ -280,7 +282,13 @@ it silently removed the hardened allocator from the authentication path.
 
 SSH is socket activated but unreachable until an administrator populates
 `/etc/particleos/ssh-allowlist.nft`. SSH accepts only public-key authentication
-and Ed25519 host/user keys. The sandbox is attached to Fedora's per-connection
+and Ed25519 host/user keys. Starting the socket requires Fedora's exact
+Ed25519 key-generation instance to succeed; the static multi-algorithm keygen
+target is masked so per-connection activation cannot create unused RSA or
+ECDSA private keys. The key generator has no capabilities or network access
+and can write only `/etc/ssh`; it permits the SELinux transition into
+`ssh_keygen_t` and must verify a non-empty private key before the socket can
+start. The connection sandbox is attached to Fedora's
 `sshd@.service` template, so every socket-activated session receives the
 capability, filesystem, namespace, and syscall restrictions; the disabled
 monolithic `sshd.service` is not used.

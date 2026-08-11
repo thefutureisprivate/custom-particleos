@@ -22,7 +22,6 @@ enable particleos-module-lockdown.service
 # SSH is socket activated, key-only, and blocked by nftables until allowlisted.
 disable sshd.service
 enable sshd.socket
-enable sshd-keygen.target
 
 # First-boot administration and core maintenance.
 disable authselect-apply-changes.service
