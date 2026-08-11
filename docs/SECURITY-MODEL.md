@@ -132,7 +132,11 @@ A dedicated mkosi initrd subimage installs only the preservation override in
 the initrd; main-system dependencies are deliberately excluded until SELinux
 is active and the relabel service exists. The main image consumes this cpio
 explicitly, avoiding reliance on target-root files that mkosi does not consult
-while constructing its default initrd.
+while constructing its default initrd. The initrd udev service preserves its
+file-descriptor store only across restarts, not its deliberate switch-root
+stop. This clears the queued-event AF_NETLINK storage descriptor before
+SELinux activates; the main manager then coldplugs devices through newly
+created, policy-labeled sockets.
 
 OBS forces mkosi to produce an aggregate checksum before attaching the final
 Secure Boot and verity signatures. A post-output hook removes exactly that

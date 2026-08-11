@@ -90,6 +90,7 @@ done
 require_fixed "systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selinux_udev_service_dropin"
 require_fixed "IgnoreOnIsolate=no" "$selinux_udev_kernel_dropin"
 initrd_udev_kernel_dropin=mkosi.images/initrd/mkosi.extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-particleos-switch-root.conf
+initrd_udev_service_dropin=mkosi.images/initrd/mkosi.extra/usr/lib/systemd/system/systemd-udevd.service.d/10-particleos-switch-root.conf
 require_fixed "Include=mkosi-initrd" "$initrd_config"
 require_fixed "Output=initrd" "$initrd_config"
 for main_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
@@ -100,6 +101,8 @@ reject_fixed "InitrdPackages=" mkosi.conf
 require_fixed "IgnoreOnIsolate=no" "$initrd_udev_kernel_dropin"
 reject_fixed "Requires=" "$initrd_udev_kernel_dropin"
 reject_fixed "After=" "$initrd_udev_kernel_dropin"
+require_fixed "FileDescriptorStorePreserve=restart" "$initrd_udev_service_dropin"
+reject_fixed "FileDescriptorStorePreserve=yes" "$initrd_udev_service_dropin"
 for split_config in mkosi.conf .obs/fedora/x86-64/webserver/mkosi.conf; do
     if ! awk '
             $0 == "SplitArtifacts=" { reset = 1; next }
