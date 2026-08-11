@@ -59,6 +59,13 @@ trap - EXIT
 # unprivileged caller cross the root boundary through util-linux SUID mode.
 chmod 0755 /usr/bin/mount /usr/bin/umount
 
+# The allocator packages ship shared objects with a meaningless setuid mode
+# bit. Shared libraries never need a privilege transition; normalize them so
+# privileged-file scanners report only the two required PAM/polkit helpers.
+find /usr/lib64 -xdev -type f \
+    \( -name 'libhardened_malloc*.so' -o -name 'libno_rlimit_as.so' \) \
+    -exec chmod 0644 {} +
+
 if [[ -d /etc/pam.d ]]; then
     find /etc/pam.d -mindepth 1 -exec mv {} /usr/lib/pam.d \;
     rmdir /etc/pam.d

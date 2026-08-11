@@ -162,12 +162,13 @@ crypto, and network drivers must be available in the UKI/initrd or declared in
 Yama scope 3 and the SELinux `deny_ptrace` boolean prohibit process attachment;
 scope 3 cannot be relaxed without rebooting. Unprivileged BPF and io_uring are
 disabled. User namespaces have a low per-UID ceiling and secureblue-derived
-SELinux policy denies their creation to every domain except `kernel_t` and
-`init_t`. This permits the privileged sandboxes used internally by
-systemd-sysupdate and systemd-homed while denying login users, `run0` shells,
-and all shipped service domains. The kernel's unprivileged-userns sysctl is
-also disabled when the running kernel exposes it. No container runtime is
-installed. Fedora's `chrony-wait.service` is explicitly disabled. Kexec,
+SELinux policy denies their creation to every domain except `kernel_t`,
+`init_t`, `systemd_importd_t`, and `systemd_homework_t`. The latter two are
+Fedora's confined helper domains for systemd-sysupdate and systemd-homed.
+Login users, `run0` shells, and all other shipped service domains remain
+denied. The kernel's unprivileged-userns sysctl is also disabled when the
+running kernel exposes it. No container runtime is installed. Fedora's
+`chrony-wait.service` is explicitly disabled. Kexec,
 userfaultfd,
 executable memfd fallback, kernel pointers/logs, SysRq, unsafe line-discipline
 autoload, and core dumps are disabled or restricted. Core dumping is denied by
@@ -239,6 +240,10 @@ other container, VM, machine-manager, import-daemon, NSS, D-Bus, and activation
 surface from its `systemd-container` package is removed. GnuPG validates the
 detached signature over the OBS-generated `SHA256SUMS` against an immutable
 vendor keyring containing only the pinned ParticleOS OBS project key.
+`libcurl-minimal` provides the dynamically loaded HTTPS transport without
+installing the curl command-line client. GnuPG is reduced to the `gpg`/`gpg2`
+verifier and its runtime libraries; agent, keyserver, keybox, TPM, user-unit,
+and auxiliary verification surfaces are removed after package installation.
 
 This host policy is not a substitute for an upstream provider firewall, DDoS
 protection, TLS termination strategy, or network monitoring.

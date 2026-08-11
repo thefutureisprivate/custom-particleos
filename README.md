@@ -34,10 +34,12 @@ The default image has:
 - authenticated DNS over TLS to Cloudflare with fail-closed local DNSSEC
   validation, no DHCP/RA resolver override, and no plaintext DNS egress;
 - complete ptrace attachment denial, SELinux-denied user namespaces outside
-  the kernel and PID 1 domain, secureblue userspace socket-class restrictions,
-  and layered core-dump prevention;
+  the kernel, PID 1, and the confined sysupdate/homed helper domains,
+  secureblue userspace socket-class restrictions, and layered core-dump
+  prevention;
 - `mount` and `umount` retained for `run0` and recovery without their Fedora
   SUID-root mode, with the unused SUID `pam_timestamp_check` helper removed;
+  only PAM's `unix_chkpwd` and Polkit's authentication helper retain SUID;
 - secureblue's signed `hardened_malloc` package preloaded for system and user
   processes, with the compatibility shim used by its systemd service baseline;
 - irreversible kernel-module loading disablement after the early boot modules
@@ -325,6 +327,10 @@ sysupdate's HTTPS callout and removes the package's container, VM, machine,
 import-daemon, D-Bus, NSS, and activation interfaces. GnuPG is retained because
 systemd-pull verifies the published `SHA256SUMS.asc`; its vendor keyring is
 replaced with the pinned `home:thefutureisprivate` OBS project key.
+`libcurl-minimal` supplies systemd-pull's dynamically loaded HTTPS transport;
+the curl command-line client is not installed. GnuPG's agent, keyserver,
+keybox, TPM, user-activation, and auxiliary verification tools are removed;
+only the `gpg`/`gpg2` verifier and its runtime libraries remain.
 
 The update source is fixed to the `home:thefutureisprivate` OBS project's
 `*_images` repository. The separate `system:systemd` repository remains only a

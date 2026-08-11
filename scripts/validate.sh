@@ -223,7 +223,7 @@ for removed_package in hostname iproute iputils p11-kit passwd systemd-ukify; do
     fi
 done
 
-for required_dependency in authselect findutils gnupg2 policycoreutils sed systemd-container; do
+for required_dependency in authselect findutils gnupg2 libcurl-minimal policycoreutils sed systemd-container; do
     if ! grep -Fxq "$required_dependency" <<<"$composed_packages"; then
         fail "$required_dependency is missing from the composed target package set"
     fi
@@ -232,6 +232,10 @@ done
 require_fixed "/usr/bin/systemd-nspawn" mkosi.conf
 require_fixed "/usr/bin/systemd-vmspawn" mkosi.conf
 require_fixed "/usr/lib/systemd/systemd-importd" mkosi.conf
+require_fixed "/usr/bin/dirmngr" mkosi.conf
+require_fixed "/usr/bin/gpg-agent" mkosi.conf
+require_fixed "/usr/libexec/keyboxd" mkosi.conf
+require_fixed "/usr/lib/systemd/user/gpg-agent.socket" mkosi.conf
 if rg -n '^[[:space:]]*/usr/lib/systemd/systemd-pull[[:space:]]*$' mkosi.conf; then
     fail "systemd-pull must be retained for systemd-sysupdate"
 fi
@@ -286,6 +290,8 @@ require_fixed "Requires=nftables.service particleos-module-lockdown.service" "$s
 require_fixed "After=nftables.service particleos-module-lockdown.service" "$sshd_socket_dropin"
 require_fixed "Before=shutdown.target" "$sshd_socket_dropin"
 require_fixed "Conflicts=shutdown.target" "$sshd_socket_dropin"
+require_fixed "ListenStream=0.0.0.0:22" "$sshd_socket_dropin"
+require_fixed "ListenStream=[::]:22" "$sshd_socket_dropin"
 if [[ -e mkosi.extra/usr/lib/systemd/system/sshd.service.d/40-particleos-hardening.conf ]]; then
     fail "the disabled monolithic sshd.service must not carry the socket-template hardening"
 fi
@@ -399,9 +405,10 @@ require_fixed "semodule -X 300 -i" mkosi.postinst.chroot
 require_fixed "/usr/lib/particleos/selinux/secureblue_harden_userns.cil" mkosi.postinst.chroot
 require_fixed "(deny userns_restricted_domain self (user_namespace (create))))" \
     mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
-require_fixed "(typeattributeset userns_privileged_domain (.init_t .kernel_t))" \
+require_fixed "(.init_t .kernel_t .systemd_homework_t .systemd_importd_t))" \
     mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
 require_fixed "chmod 0755 /usr/bin/mount /usr/bin/umount" mkosi.postinst.chroot
+require_fixed "-exec chmod 0644 {} +" mkosi.postinst.chroot
 require_fixed "libhardened_malloc.so" mkosi.extra/etc/ld.so.preload
 require_fixed "L /etc/ld.so.preload" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 require_fixed 'DefaultEnvironment="LD_PRELOAD=libhardened_malloc.so libno_rlimit_as.so"'     mkosi.extra/usr/lib/systemd/system.conf.d/40-particleos-hardening.conf
