@@ -68,7 +68,7 @@ therefore explicit lower-layer trust dependencies.
 |---|---|---|
 | Image layout | Project-key-only Secure Boot, signed UKI, A/B usr, dm-verity, PCR 7-bound TPM2 root and swap | systemd/particleos |
 | Kernel command line | audit, SELinux enforcing, IPE, lockdown, signed modules, allocation/free initialization, stack/allocator randomization, no initrd shell, vsyscall, or IA-32 emulation | particleOS plus GrapheneOS and secureblue policy |
-| Kernel runtime | SELinux plus irreversible Yama ptrace denial, disabled user namespaces, irreversible unprivileged BPF and io_uring denial, restricted perf, kexec, kernel logs, core dumps, and module loading | GrapheneOS infrastructure and secureblue |
+| Kernel runtime | SELinux plus irreversible Yama ptrace denial, targeted user-namespace denial, irreversible unprivileged BPF and io_uring denial, restricted perf, kexec, kernel logs, core dumps, and module loading | GrapheneOS infrastructure and secureblue |
 | Memory allocator | signed secureblue `hardened_malloc` package globally preloaded with `no_rlimit_as` for managed services | secureblue |
 | Network | default-deny nftables input/forward/output, pre-conntrack service filtering, source-keyed admission, dual-stack FIB RPF, strong host model, stateful service egress | GrapheneOS infrastructure |
 | DNS | systemd-resolved, authenticated Cloudflare DoT only, local DNSSEC validation, no DHCP/RA DNS or plaintext fallback | systemd and secureblue guidance |
@@ -160,10 +160,15 @@ crypto, and network drivers must be available in the UKI/initrd or declared in
 `modules-load.d` before release.
 
 Yama scope 3 and the SELinux `deny_ptrace` boolean prohibit process attachment;
-scope 3 cannot be relaxed without rebooting. Unprivileged BPF, io_uring, and
-all user namespaces are disabled for the boot. No enabled service or installed
-container runtime requires a user namespace; Fedora's `chrony-wait.service` is
-explicitly disabled. Kexec, userfaultfd,
+scope 3 cannot be relaxed without rebooting. Unprivileged BPF and io_uring are
+disabled. User namespaces have a low per-UID ceiling and secureblue-derived
+SELinux policy denies their creation to every domain except `kernel_t` and
+`init_t`. This permits the privileged sandboxes used internally by
+systemd-sysupdate and systemd-homed while denying login users, `run0` shells,
+and all shipped service domains. The kernel's unprivileged-userns sysctl is
+also disabled when the running kernel exposes it. No container runtime is
+installed. Fedora's `chrony-wait.service` is explicitly disabled. Kexec,
+userfaultfd,
 executable memfd fallback, kernel pointers/logs, SysRq, unsafe line-discipline
 autoload, and core dumps are disabled or restricted. Core dumping is denied by
 the kernel pipe target, system and user manager limits, PAM limits, the
@@ -228,6 +233,12 @@ systemd's dynamic nftables integration grants HTTPS only to the realized
 outbound connections. After an administrator replaces the nftables ruleset,
 the documented `systemctl daemon-reload` step repopulates the active unit's
 dynamic cgroup membership.
+
+Sysupdate delegates HTTPS transfer to the retained `systemd-pull` binary. All
+other container, VM, machine-manager, import-daemon, NSS, D-Bus, and activation
+surface from its `systemd-container` package is removed. GnuPG validates the
+detached signature over the OBS-generated `SHA256SUMS` against an immutable
+vendor keyring containing only the pinned ParticleOS OBS project key.
 
 This host policy is not a substitute for an upstream provider firewall, DDoS
 protection, TLS termination strategy, or network monitoring.

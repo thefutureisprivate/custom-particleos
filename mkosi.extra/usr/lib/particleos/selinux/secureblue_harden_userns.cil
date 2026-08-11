@@ -1,0 +1,17 @@
+; SPDX-FileCopyrightText: Copyright 2025-2026 The Secureblue Authors
+;
+; SPDX-License-Identifier: Apache-2.0 OR MIT
+
+; systemd-sysupdate and systemd-homed need privileged user namespaces for
+; their internal sandboxes. Permit only the kernel, PID 1 descendants which
+; remain in init_t; deny creation to every other SELinux domain, including
+; unconfined login users and run0 shells.
+(block secureblue_harden_userns
+  (typeattribute userns_privileged_domain)
+  (typeattributeset userns_privileged_domain (.init_t .kernel_t))
+
+  (typeattribute userns_restricted_domain)
+  (typeattributeset userns_restricted_domain
+    (and (.domain) (not (userns_privileged_domain))))
+
+  (deny userns_restricted_domain self (user_namespace (create))))

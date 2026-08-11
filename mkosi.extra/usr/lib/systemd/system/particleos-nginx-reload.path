@@ -1,7 +1,8 @@
 [Unit]
 Description=Watch for validated Certbot deployment requests
-Requires=nginx.service
-After=nginx.service
+# Path units order before paths.target. Keep nginx dependencies on the
+# triggered service so this watcher cannot form a paths.target/basic.target
+# ordering cycle during boot.
 
 [Path]
 PathExists=/run/particleos-certbot/reload-request

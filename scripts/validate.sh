@@ -180,6 +180,12 @@ if ! diff -u \
 fi
 
 if ! diff -u \
+        <(extract_stanza RemoveFiles mkosi.conf | sort -u) \
+        <(extract_stanza RemoveFiles "$obs_recipe" | sort -u); then
+    fail "OBS RemoveFiles= must equal the main image pruning set"
+fi
+
+if ! diff -u \
         <(extract_stanza Packages "$initrd_config" | sort -u) \
         <(extract_stanza InitrdPackages "$obs_recipe" | sort -u); then
     fail "OBS InitrdPackages= must expose the custom initrd package set to the build-local mirror"
@@ -215,11 +221,20 @@ for removed_package in hostname iproute iputils p11-kit passwd systemd-ukify; do
     fi
 done
 
-for required_dependency in authselect findutils policycoreutils sed; do
+for required_dependency in authselect findutils gnupg2 policycoreutils sed systemd-container; do
     if ! grep -Fxq "$required_dependency" <<<"$composed_packages"; then
         fail "$required_dependency is missing from the composed target package set"
     fi
 done
+
+require_fixed "/usr/bin/systemd-nspawn" mkosi.conf
+require_fixed "/usr/bin/systemd-vmspawn" mkosi.conf
+require_fixed "/usr/lib/systemd/systemd-importd" mkosi.conf
+if rg -n '^[[:space:]]*/usr/lib/systemd/systemd-pull[[:space:]]*$' mkosi.conf; then
+    fail "systemd-pull must be retained for systemd-sysupdate"
+fi
+require_fixed '"$SRCDIR/mkosi.resources/particleos-obs-pubkey.gpg"' mkosi.finalize
+require_fixed '"$BUILDROOT/usr/lib/systemd/import-pubring.pgp"' mkosi.finalize
 
 require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/Fedora_44/" mkosi.resources/particleos-obs.repo
 require_fixed "priority=1" mkosi.resources/particleos-obs.repo
@@ -251,6 +266,12 @@ reject_fixed "NoNewPrivileges=yes" "$sshd_template_dropin"
 require_fixed "CapabilityBoundingSet=" "$sshd_template_dropin"
 require_fixed "ProtectSystem=strict" "$sshd_template_dropin"
 require_fixed "RestrictNamespaces=yes" "$sshd_template_dropin"
+sshd_socket_dropin=mkosi.extra/usr/lib/systemd/system/sshd.socket.d/40-particleos-firewall.conf
+require_fixed "DefaultDependencies=no" "$sshd_socket_dropin"
+require_fixed "Requires=nftables.service particleos-module-lockdown.service" "$sshd_socket_dropin"
+require_fixed "After=nftables.service particleos-module-lockdown.service" "$sshd_socket_dropin"
+require_fixed "Before=shutdown.target" "$sshd_socket_dropin"
+require_fixed "Conflicts=shutdown.target" "$sshd_socket_dropin"
 if [[ -e mkosi.extra/usr/lib/systemd/system/sshd.service.d/40-particleos-hardening.conf ]]; then
     fail "the disabled monolithic sshd.service must not carry the socket-template hardening"
 fi
@@ -269,8 +290,17 @@ reject_fixed "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX"     mkosi.extra/
 require_fixed "UMask=0027" mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
 require_fixed "d /var/www/html/.well-known/acme-challenge 2750 certbot nginx -" \
     mkosi.extra/usr/lib/tmpfiles.d/etc.conf
-require_fixed "PathExists=/run/particleos-certbot/reload-request"     mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.path
-require_fixed "ExecStartPre=/usr/bin/nginx -e stderr -t -q"     mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.service
+certbot_reload_path=mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.path
+certbot_reload_service=mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.service
+require_fixed "PathExists=/run/particleos-certbot/reload-request" "$certbot_reload_path"
+reject_fixed "Requires=nginx.service" "$certbot_reload_path"
+reject_fixed "After=nginx.service" "$certbot_reload_path"
+require_fixed "Requires=nginx.service" "$certbot_reload_service"
+require_fixed "After=nginx.service" "$certbot_reload_service"
+require_fixed "ExecStartPre=/usr/bin/nginx -e stderr -t -q" "$certbot_reload_service"
+require_fixed "CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_NET_BIND_SERVICE" \
+    "$certbot_reload_service"
+require_fixed "LimitNOFILE=32768" "$certbot_reload_service"
 require_fixed "policy drop" mkosi.extra/usr/lib/particleos/nftables.conf
 require_fixed "meter web_tcp4" mkosi.extra/usr/lib/particleos/nftables.conf
 require_fixed "add @web_tcp_conn4 { ip saddr ct count over 64 }" mkosi.extra/usr/lib/particleos/nftables.conf
@@ -339,7 +369,7 @@ require_fixed "kernel.unprivileged_bpf_disabled = 2" mkosi.extra/usr/lib/sysctl.
 require_fixed "kernel.yama.ptrace_scope = 3" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "vm.memfd_noexec = 1" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.unprivileged_userns_clone = 0" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
-require_fixed "user.max_user_namespaces = 0" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
+require_fixed "user.max_user_namespaces = 64" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "disable chrony-wait.service"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed "kernel.core_pattern = |/bin/false" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.oops_limit = 100" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
@@ -352,6 +382,11 @@ require_fixed "setsebool -P container_allow_ptrace=off" mkosi.postinst.chroot
 require_fixed "trap restore_preload EXIT" mkosi.postinst.chroot
 require_fixed "restore_preload" mkosi.postinst.chroot
 require_fixed "semodule -X 300 -i" mkosi.postinst.chroot
+require_fixed "/usr/lib/particleos/selinux/secureblue_harden_userns.cil" mkosi.postinst.chroot
+require_fixed "(deny userns_restricted_domain self (user_namespace (create))))" \
+    mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
+require_fixed "(typeattributeset userns_privileged_domain (.init_t .kernel_t))" \
+    mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
 require_fixed "chmod 0755 /usr/bin/mount /usr/bin/umount" mkosi.postinst.chroot
 require_fixed "libhardened_malloc.so" mkosi.extra/etc/ld.so.preload
 require_fixed "L /etc/ld.so.preload" mkosi.extra/usr/lib/tmpfiles.d/etc.conf

@@ -33,8 +33,9 @@ The default image has:
   OpenSSH, nginx, and systemd service hardening;
 - authenticated DNS over TLS to Cloudflare with fail-closed local DNSSEC
   validation, no DHCP/RA resolver override, and no plaintext DNS egress;
-- complete ptrace attachment denial, disabled user namespaces, secureblue
-  userspace socket-class restrictions, and layered core-dump prevention;
+- complete ptrace attachment denial, SELinux-denied user namespaces outside
+  the kernel and PID 1 domain, secureblue userspace socket-class restrictions,
+  and layered core-dump prevention;
 - `mount` and `umount` retained for `run0` and recovery without their Fedora
   SUID-root mode, with the unused SUID `pam_timestamp_check` helper removed;
 - secureblue's signed `hardened_malloc` package preloaded for system and user
@@ -318,6 +319,12 @@ through the unit rather than executing the binary directly:
 ```sh
 run0 systemctl start systemd-sysupdate.service
 ```
+
+The image retains `systemd-pull` from `systemd-container` solely as
+sysupdate's HTTPS callout and removes the package's container, VM, machine,
+import-daemon, D-Bus, NSS, and activation interfaces. GnuPG is retained because
+systemd-pull verifies the published `SHA256SUMS.asc`; its vendor keyring is
+replaced with the pinned `home:thefutureisprivate` OBS project key.
 
 The update source is fixed to the `home:thefutureisprivate` OBS project's
 `*_images` repository. The separate `system:systemd` repository remains only a

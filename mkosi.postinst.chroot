@@ -36,6 +36,7 @@ if getsebool container_allow_ptrace >/dev/null 2>&1; then
     setsebool -P container_allow_ptrace=off
 fi
 semodule -X 300 -i \
+    /usr/lib/particleos/selinux/secureblue_harden_userns.cil \
     /usr/lib/particleos/selinux/secureblue_socket_utils.cil \
     /usr/lib/particleos/selinux/secureblue_deny_alg_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil \
