@@ -32,6 +32,14 @@ enable systemd-oomd.service
 enable systemd-sysupdate.timer
 enable fstrim.timer
 
+# systemd-container is installed only for systemd-pull. Its other units and
+# binaries are removed after package installation.
+disable machines.target
+disable systemd-importd.socket
+disable systemd-machined.socket
+disable systemd-mountfsd.socket
+disable systemd-nsresourced.socket
+
 # Reduce unused local discovery and sensitive crash artifacts.
 disable avahi-daemon.service
 disable avahi-daemon.socket

@@ -46,6 +46,7 @@ require_fixed "ToolsTreeMirror=https://download.opensuse.org" mkosi.conf
 require_fixed "SELinuxRelabel=yes" mkosi.conf
 require_fixed "WithDocs=no" mkosi.conf
 require_fixed "WithRecommends=no" mkosi.conf
+require_fixed "ExtraTrees=mkosi.resources:/usr/lib/particleos/sysupdate-key-source" mkosi.conf
 require_fixed "SecureBoot=yes" mkosi.conf
 require_fixed "SignExpectedPcr=no" mkosi.conf
 require_fixed "SignExpectedPcr=no" mkosi.uki-profiles/95-emergency.conf
@@ -158,6 +159,7 @@ require_fixed "Mirror=https://dl.fedoraproject.org/pub/fedora" "$obs_recipe"
 require_fixed "ToolsTreeMirror=https://download.opensuse.org" "$obs_recipe"
 require_fixed "Profiles=obs-sysupdate" "$obs_recipe"
 require_fixed "WithRecommends=no" "$obs_recipe"
+require_fixed "ExtraTrees=mkosi.resources:/usr/lib/particleos/sysupdate-key-source" "$obs_recipe"
 checksum_hook=mkosi.postoutput.d/90-remove-first-pass-checksum
 test -x "$checksum_hook" || fail "$checksum_hook must be executable"
 require_fixed "Refusing unsafe checksum path" "$checksum_hook"
@@ -233,8 +235,18 @@ require_fixed "/usr/lib/systemd/systemd-importd" mkosi.conf
 if rg -n '^[[:space:]]*/usr/lib/systemd/systemd-pull[[:space:]]*$' mkosi.conf; then
     fail "systemd-pull must be retained for systemd-sysupdate"
 fi
-require_fixed '"$SRCDIR/mkosi.resources/particleos-obs-pubkey.gpg"' mkosi.finalize
-require_fixed '"$BUILDROOT/usr/lib/systemd/import-pubring.pgp"' mkosi.finalize
+require_fixed "/usr/lib/particleos/sysupdate-key-source/particleos-obs-pubkey.gpg" \
+    mkosi.postinst.chroot
+require_fixed "/usr/lib/systemd/import-pubring.pgp" mkosi.postinst.chroot
+for disabled_container_unit in \
+        machines.target \
+        systemd-importd.socket \
+        systemd-machined.socket \
+        systemd-mountfsd.socket \
+        systemd-nsresourced.socket; do
+    require_fixed "disable $disabled_container_unit" \
+        mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
+done
 
 require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/Fedora_44/" mkosi.resources/particleos-obs.repo
 require_fixed "priority=1" mkosi.resources/particleos-obs.repo

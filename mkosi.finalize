@@ -7,13 +7,6 @@ set -e
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"
 
-# systemd-pull verifies OBS's signed SHA256SUMS with this exclusive project
-# key. Replace systemd-container's generic vendor key rather than expanding
-# update trust to Fedora or the upstream systemd build project.
-install -m 0644 \
-    "$SRCDIR/mkosi.resources/particleos-obs-pubkey.gpg" \
-    "$BUILDROOT/usr/lib/systemd/import-pubring.pgp"
-
 # Capture the entirety of /etc in /usr/share/factory/etc so we can use
 # systemd-tmpfiles to symlink individual directories from it to /etc.
 mkdir -p "$BUILDROOT/usr/share/factory/"
