@@ -113,12 +113,21 @@ systemd-repart would automatically add an unusable signed PCR 11 policy to the
 direct PCR 7 policy. The non-PCR split metadata required for OBS's two-pass
 dm-verity signing is retained. SELinux relabeling occurs at image build time
 and the installed policy is targeted/enforcing.
+Current systemd NvPCR initialization also requires that signed PCR policy and
+its public key. The custom initrd therefore omits the vendor NvPCR definitions,
+and product/login measurement units run only when a corresponding initialized
+NvPCR authorization record exists. This avoids failed TPM units without
+weakening the direct PCR 7 binding used for root and swap.
 The encrypted root is populated from a minimal factory skeleton whose root,
-`/etc`, `/home`, `/var`, journal directory, and immutable `/etc/selinux`
-symlink are labeled against their future paths at build time. `systemd-repart`
-preserves those SELinux extended attributes, so PID 1 can load the immutable
-policy before switch-root without leaving the fresh writable filesystem
-unlabeled. Because the cpio initrd cannot preserve SELinux xattrs, its inherited
+`/etc`, `/home`, `/var`, journal directory, merged-/usr compatibility symlinks,
+and immutable `/etc/selinux` symlink are labeled against their future paths at
+build time. Creating `/bin`, `/sbin`, `/lib`, and `/lib64` in that skeleton is
+required: creating them during first boot would leave those root-filesystem
+objects unlabeled before enforcing policy is available. `systemd-repart`
+preserves the build-time SELinux extended attributes, so PID 1 can load the
+immutable policy before switch-root without leaving the fresh writable
+filesystem unlabeled. Because the cpio initrd cannot preserve SELinux xattrs,
+its inherited
 `/dev` and `/run/udev` trees are relabeled immediately after switch-root and
 before the main udev daemon and sockets start. The daemon is ordered directly
 because systemd enables it at `sysinit.target`; ordering only its socket leaves
@@ -158,21 +167,43 @@ explicitly disabled. Kexec, userfaultfd,
 executable memfd fallback, kernel pointers/logs, SysRq, unsafe line-discipline
 autoload, and core dumps are disabled or restricted. Core dumping is denied by
 the kernel pipe target, system and user manager limits, PAM limits, the
-systemd-coredump configuration, and the disabled coredump socket.
+systemd-coredump configuration, and masked coredump activation units. The
+socket is pulled in statically by `sockets.target`, so a preset alone cannot
+disable it; both the socket and its service are vendor-masked in immutable
+`/usr`.
 
 At SELinux priority 300, secureblue-derived CIL policy prevents non-kernel
 domains from creating or using AF_ALG kernel crypto sockets, IPsec key and XFRM
 sockets, packet-radio families, and legacy families not needed by a VPS web
-server. The AF_ALG policy retains secureblue's `bluetooth_t` exception, but
-this image does not ship Bluetooth userspace. Adding IPsec, SCTP, CAN,
-Bluetooth, or container functionality requires a new policy and threat-model
-review.
+server. Policy compilation uses `handle-unknown=deny`, so a permission added by
+a newer kernel but absent from the installed policy is denied instead of
+implicitly allowed. The AF_ALG policy retains secureblue's `bluetooth_t`
+exception, but this image does not ship Bluetooth userspace. Adding IPsec,
+SCTP, CAN, Bluetooth, or container functionality requires a new policy and
+threat-model review.
+
+The writable-root skeleton carries SELinux labels before switch-root. Its
+`/etc/selinux` factory symlink is labelled `etc_t` so early systemd generators
+can traverse it, while the immutable target policy files keep their
+policy-specific labels.
 
 ## Network policy
 
 The nftables service loads the complete immutable policy before the network is
 configured. nginx, Certbot renewal, the SSH socket, and chrony require both the
 firewall and module-lockdown services, so failure is closed.
+The nftables loader and chronyd enter Fedora's dedicated `iptables_t` and
+`chronyd_t` SELinux domains. `NoNewPrivileges=yes` is therefore deliberately
+not applied to those units because it prevents these security-domain
+transitions before their executables start. Their narrow capability bounds,
+filesystem protections, namespace restrictions, and syscall filters remain in
+force.
+
+Legacy `memfd_create()` callers receive sealed, non-executable memory by
+default through `vm.memfd_noexec=1`. Enforcement level 2 is not used because
+it rejects callers that have not yet added `MFD_NOEXEC_SEAL`, including
+Fedora's system D-Bus broker, while level 1 still closes the implicit
+executable-memfd behavior.
 
 Inbound policy permits:
 
@@ -210,20 +241,31 @@ does not downgrade to plaintext or an unvalidated provider resolver.
 ## Administration
 
 There are no embedded user credentials. On first boot, systemd-homed prompts on
-the VPS console and creates a LUKS-backed user in `wheel` and
-`systemd-journal`. Polkit authorizes run0; sudo is absent.
+the VPS console and creates a directory-backed user in `wheel` and
+`systemd-journal` inside the TPM2/LUKS-encrypted writable root. Directory
+storage is deliberate: ordinary directory creation receives
+`user_home_dir_t`, whereas Btrfs subvolume roots are created without an SELinux
+label. Polkit authorizes run0; sudo is absent.
 Fedora's `mount` and `umount` binaries remain available at mode 0755, so
 administrators and recovery units can use them through an already privileged
 `run0` context without exposing their package-default SUID transition.
 The unused `pam_timestamp_check` helper is deleted. `unix_chkpwd` and
-`polkit-agent-helper-1` retain their Fedora modes because they are part of the
-PAM/polkit authentication path; their removal requires a booted console and
-`run0` authentication test.
+`polkit-agent-helper-1` retain their Fedora SUID modes because they are part of
+the PAM/polkit authentication path. A real getty and run0 authentication test
+confirmed that stripping `unix_chkpwd` prevents the privileged transient unit's
+PAM session from starting; the polkit helper performs the interactive password
+check itself.
 
 SSH is socket activated but unreachable until an administrator populates
-`/etc/particleos/ssh-allowlist.nft`. SSH accepts only public-key
-authentication and Ed25519 host/user keys. Initial public-key installation and
-firewall changes therefore require console or trusted out-of-band access.
+`/etc/particleos/ssh-allowlist.nft`. SSH accepts only public-key authentication
+and Ed25519 host/user keys. The sandbox is attached to Fedora's per-connection
+`sshd@.service` template, so every socket-activated session receives the
+capability, filesystem, namespace, and syscall restrictions; the disabled
+monolithic `sshd.service` is not used.
+`NoNewPrivileges=yes` is excluded because OpenSSH 10.2 re-execs its session
+helper and SELinux must transition it from `sshd_t` to `sshd_session_t`.
+Initial public-key installation and firewall changes therefore require console
+or trusted out-of-band access.
 
 Mutable operator-controlled paths are intentionally limited:
 
@@ -238,7 +280,9 @@ image. Certbot state and TLS private keys are owned by the non-login `certbot`
 account. nginx's root master reads certificates during start/reload; workers do
 not receive write access. Renewal cannot access the systemd manager socket and
 can only request the fixed validator/reloader by creating a watched runtime
-file.
+file. Certbot can create only IPv4 and IPv6 sockets; AF_UNIX is excluded, making
+the systemd and D-Bus manager sockets unreachable without hiding
+`/run/systemd/resolve`, which `/etc/resolv.conf` needs for ACME DNS lookups.
 
 ## nginx scope
 
@@ -249,7 +293,9 @@ template uses a fixed-host HTTPS redirect. Provisioned virtual hosts serve
 static files over HTTP/1.1, HTTP/2, and HTTP/3. Dotfiles, directory indexing,
 oversized request bodies/headers, excessive ranges, and high per-source
 request/connection rates are rejected. The default headers use a restrictive
-CSP suitable for the shipped static placeholder.
+CSP suitable for the shipped static placeholder. Access logs are sent directly
+to journald's local syslog socket; nginx does not reopen `/dev/stdout`, which is
+not a reopenable file when systemd connects standard output to the journal.
 
 Operators must review CSP, cross-origin isolation, caching, HSTS, HTTP-to-HTTPS
 redirects, and request size when adding an application. Certbot is included
@@ -258,6 +304,10 @@ configuration-rewriting plugin are absent. Dynamic runtimes, reverse proxies,
 uploads, databases, and application frameworks are not present. Adding one
 changes the threat model and requires its own service account, egress rule,
 systemd sandbox, SELinux policy, and update plan.
+
+The renewal drop-in clears Fedora's inherited `/etc/sysconfig/certbot`
+environment file and replaces the vendor command, leaving the immutable
+`cli.ini` plus per-certificate renewal state as the only Certbot inputs.
 
 ## Release verification
 

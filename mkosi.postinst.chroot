@@ -21,6 +21,13 @@ if [[ -f "$preload" ]]; then
     mv "$preload" "$preload_build_backup"
 fi
 
+# Fail closed if a future kernel introduces an SELinux permission which the
+# installed Fedora policy does not yet understand.
+if ! grep -qx 'handle-unknown=deny' /etc/selinux/semanage.conf; then
+    printf '\n# ParticleOS fails closed on permissions missing from policy.\nhandle-unknown=deny\n' \
+        >>/etc/selinux/semanage.conf
+fi
+
 setsebool -P deny_ptrace=on
 # container_allow_ptrace was removed from Fedora's SELinux policy. Keep it
 # disabled on policy versions that still define it without making newer
@@ -33,7 +40,8 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_deny_alg_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_obscure_sockets.cil \
-    /usr/lib/particleos/selinux/secureblue_deny_packet_radio_sockets.cil
+    /usr/lib/particleos/selinux/secureblue_deny_packet_radio_sockets.cil \
+    /usr/lib/particleos/selinux/particleos_homed_login.cil
 restore_preload
 trap - EXIT
 
@@ -45,6 +53,16 @@ if [[ -d /etc/pam.d ]]; then
     find /etc/pam.d -mindepth 1 -exec mv {} /usr/lib/pam.d \;
     rmdir /etc/pam.d
 fi
+
+# pam_unix can validate the shadow hash exported by systemd-homed but cannot
+# activate the home. Run pam_systemd_home first so it receives the password.
+for pam_stack in /usr/lib/pam.d/system-auth /usr/lib/pam.d/password-auth; do
+    sed --in-place \
+        '/^auth[[:space:]].*pam_systemd_home\.so[[:space:]]*$/d' "$pam_stack"
+    sed --in-place \
+        '/^auth[[:space:]].*pam_unix\.so/i auth        sufficient                                   pam_systemd_home.so' \
+        "$pam_stack"
+done
 
 # Remove obsolete entries from the PAM stack.
 find /usr/lib/pam.d/ -mindepth 1 -exec sed --in-place '/pam_shells.so/d' {} \;

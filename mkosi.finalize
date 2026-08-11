@@ -2,6 +2,11 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -e
 
+# The vendor socket is pulled in statically by sockets.target, so a preset
+# cannot disable it. Mask both activation units in immutable /usr instead.
+ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"
+ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"
+
 # Capture the entirety of /etc in /usr/share/factory/etc so we can use
 # systemd-tmpfiles to symlink individual directories from it to /etc.
 mkdir -p "$BUILDROOT/usr/share/factory/"
@@ -16,8 +21,16 @@ install -d -m 0755 \
     "$root_skeleton/etc" \
     "$root_skeleton/home" \
     "$root_skeleton/var/log/journal"
+ln -sfn usr/bin "$root_skeleton/bin"
+ln -sfn usr/lib "$root_skeleton/lib"
+ln -sfn usr/lib64 "$root_skeleton/lib64"
+ln -sfn usr/sbin "$root_skeleton/sbin"
 ln -sfn /usr/share/factory/etc/selinux "$root_skeleton/etc/selinux"
 chroot "$BUILDROOT" /usr/sbin/setfiles -F \
     -r /usr/share/factory/root \
     /etc/selinux/targeted/contexts/files/file_contexts \
     /usr/share/factory/root
+# Generators need to traverse this as an ordinary /etc link. The immutable
+# target and its policy files retain their policy-specific labels.
+chroot "$BUILDROOT" /usr/bin/chcon -h system_u:object_r:etc_t:s0 \
+    /usr/share/factory/root/etc/selinux

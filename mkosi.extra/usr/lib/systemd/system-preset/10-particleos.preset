@@ -25,6 +25,7 @@ enable sshd.socket
 enable sshd-keygen.target
 
 # First-boot administration and core maintenance.
+disable authselect-apply-changes.service
 enable systemd-homed-firstboot.service
 enable preset-global.service
 enable systemd-oomd.service
@@ -35,4 +36,3 @@ enable fstrim.timer
 disable avahi-daemon.service
 disable avahi-daemon.socket
 disable debug-shell.service
-disable systemd-coredump.socket

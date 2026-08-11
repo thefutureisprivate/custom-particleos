@@ -1,0 +1,8 @@
+; SPDX-License-Identifier: LGPL-2.1-or-later
+
+; Fedora 44 local_login_t and the PAM password helper query systemd-userdbd's
+; Varlink endpoint while resolving systemd-homed users. Permit only reading
+; that socket inode.
+(block particleos_homed_login
+  (allow .local_login_t .systemd_userdbd_runtime_t (sock_file (read)))
+  (allow .chkpwd_t .systemd_userdbd_runtime_t (sock_file (read))))

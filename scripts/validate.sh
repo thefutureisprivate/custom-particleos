@@ -55,9 +55,15 @@ require_fixed "CopyFiles=/usr/share/factory/root:/" mkosi.extra/usr/lib/repart.d
 reject_fixed "MakeDirectories=" mkosi.extra/usr/lib/repart.d/40-root.conf
 reject_fixed "MakeSymlinks=" mkosi.extra/usr/lib/repart.d/40-root.conf
 require_fixed "root_skeleton=\"\$BUILDROOT/usr/share/factory/root\"" mkosi.finalize
+require_fixed 'ln -sfn usr/bin "$root_skeleton/bin"' mkosi.finalize
+require_fixed 'ln -sfn usr/lib "$root_skeleton/lib"' mkosi.finalize
+require_fixed 'ln -sfn usr/lib64 "$root_skeleton/lib64"' mkosi.finalize
+require_fixed 'ln -sfn usr/sbin "$root_skeleton/sbin"' mkosi.finalize
 require_fixed "ln -sfn /usr/share/factory/etc/selinux" mkosi.finalize
 require_fixed "chroot \"\$BUILDROOT\" /usr/sbin/setfiles -F" mkosi.finalize
 require_fixed "-r /usr/share/factory/root" mkosi.finalize
+require_fixed "chroot \"\$BUILDROOT\" /usr/bin/chcon -h system_u:object_r:etc_t:s0" mkosi.finalize
+require_fixed "L? /etc/protocols" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
 if extract_stanza "Packages" "$initrd_config" | grep -Fxq selinux-policy-targeted; then
     fail "$initrd_config must not load enforcing policy from an unlabeled cpio initrd"
@@ -74,6 +80,11 @@ for required_initrd_volatile_package in systemd udev; do
         fail "$required_initrd_volatile_package must remain volatile in the custom initrd"
     fi
 done
+require_fixed "/usr/lib/nvpcr" "$initrd_config"
+pcrproduct_dropin=mkosi.extra/usr/lib/systemd/system/systemd-pcrproduct.service.d/40-particleos-nvpcr.conf
+pcrlogin_dropin=mkosi.extra/usr/lib/systemd/system/systemd-pcrlogin@.service.d/40-particleos-nvpcr.conf
+require_fixed "ConditionPathExists=/run/systemd/nvpcr/hardware.auth" "$pcrproduct_dropin"
+require_fixed "ConditionPathExists=/run/systemd/nvpcr/login.auth" "$pcrlogin_dropin"
 selinux_relabel_unit=mkosi.extra/usr/lib/systemd/system/particleos-selinux-runtime-relabel.service
 selinux_udev_service_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd.service.d/10-selinux-runtime-relabel.conf
 selinux_udev_kernel_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-selinux-runtime-relabel.conf
@@ -227,8 +238,22 @@ if rg -n 'amd-ucode-firmware|microcode_ctl' mkosi.conf mkosi.conf.d "$obs_recipe
 fi
 
 require_fixed "--member-of=wheel,systemd-journal"     mkosi.extra/usr/lib/systemd/system/systemd-homed-firstboot.service.d/40-particleos-admin.conf
+require_fixed "DefaultStorage=directory" \
+    mkosi.extra/usr/lib/systemd/homed.conf.d/40-particleos.conf
+require_fixed "pam_systemd_home\\.so" mkosi.postinst.chroot
+require_fixed "pam_unix\\.so/i auth" mkosi.postinst.chroot
 require_fixed "PermitRootLogin no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PasswordAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
+sshd_template_dropin=mkosi.extra/usr/lib/systemd/system/sshd@.service.d/40-particleos-hardening.conf
+require_fixed "Requires=nftables.service particleos-module-lockdown.service" "$sshd_template_dropin"
+require_fixed "NoNewPrivileges=no" "$sshd_template_dropin"
+reject_fixed "NoNewPrivileges=yes" "$sshd_template_dropin"
+require_fixed "CapabilityBoundingSet=" "$sshd_template_dropin"
+require_fixed "ProtectSystem=strict" "$sshd_template_dropin"
+require_fixed "RestrictNamespaces=yes" "$sshd_template_dropin"
+if [[ -e mkosi.extra/usr/lib/systemd/system/sshd.service.d/40-particleos-hardening.conf ]]; then
+    fail "the disabled monolithic sshd.service must not carry the socket-template hardening"
+fi
 require_fixed "authenticator = webroot" mkosi.extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "webroot-path = /var/www/html" mkosi.extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "required-profile = shortlived" mkosi.extra/usr/lib/particleos/certbot/cli.ini
@@ -236,8 +261,11 @@ require_fixed "deploy-hook = /usr/bin/touch /run/particleos-certbot/reload-reque
 require_fixed "enable certbot-renew.timer"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed "enable particleos-nginx-reload.path"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed "Requires=nftables.service nginx.service particleos-module-lockdown.service particleos-nginx-reload.path"     mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
+require_fixed "EnvironmentFile=" \
+    mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
 require_fixed "User=certbot" mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
-require_fixed "InaccessiblePaths=/run/systemd/private /run/dbus/system_bus_socket"     mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
+require_fixed "RestrictAddressFamilies=AF_INET AF_INET6"     mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
+reject_fixed "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX"     mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
 require_fixed "UMask=0077" mkosi.extra/usr/lib/systemd/system/certbot-renew.service.d/40-particleos-hardening.conf
 require_fixed "PathExists=/run/particleos-certbot/reload-request"     mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.path
 require_fixed "ExecStartPre=/usr/bin/nginx -e stderr -t -q"     mkosi.extra/usr/lib/systemd/system/particleos-nginx-reload.service
@@ -271,10 +299,18 @@ require_fixed "Requires=nftables.service particleos-module-lockdown.service"    
 require_fixed "ExecStart=/usr/bin/nginx -e stderr" mkosi.extra/usr/lib/systemd/system/nginx.service
 require_fixed "Type=exec" mkosi.extra/usr/lib/systemd/system/nginx.service
 require_fixed "UMask=0077" mkosi.extra/usr/lib/systemd/system/nginx.service
+require_fixed "LimitNOFILE=32768" mkosi.extra/usr/lib/systemd/system/nginx.service
+if rg -n 'worker_rlimit_nofile' mkosi.extra/usr/lib/particleos/nginx; then
+    fail "nginx file-descriptor limits must be set by systemd before capabilities are dropped"
+fi
 require_fixed "install --directory --mode=0700 /run/nginx" mkosi.postinst.chroot
 require_fixed "rm --force /run/nginx/nginx.pid" mkosi.postinst.chroot
 require_fixed "rmdir /run/nginx" mkosi.postinst.chroot
-require_fixed "access_log /dev/stdout" mkosi.extra/usr/lib/particleos/nginx/nginx.conf
+require_fixed "access_log syslog:server=unix:/run/systemd/journal/dev-log,facility=daemon,tag=nginx,nohostname main" \
+    mkosi.extra/usr/lib/particleos/nginx/nginx.conf
+if rg -n 'access_log[[:space:]]+/dev/(stdout|stderr)' mkosi.extra/usr/lib/particleos/nginx; then
+    fail "nginx access logs must use the journald syslog socket, not a stream descriptor path"
+fi
 require_fixed "error_log stderr" mkosi.extra/usr/lib/particleos/nginx/nginx.conf
 require_fixed "return 404;" mkosi.extra/usr/lib/particleos/nginx/conf.d/particleos.conf
 require_fixed "return 308 https://example.invalid\$request_uri"     mkosi.extra/usr/share/doc/particleos/nginx/https.conf.example
@@ -299,6 +335,7 @@ require_fixed "u certbot" mkosi.extra/usr/lib/sysusers.d/particleos-webserver.co
 require_fixed "kernel.io_uring_disabled = 2" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.unprivileged_bpf_disabled = 2" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.yama.ptrace_scope = 3" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
+require_fixed "vm.memfd_noexec = 1" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.unprivileged_userns_clone = 0" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "user.max_user_namespaces = 0" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "disable chrony-wait.service"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
@@ -307,6 +344,7 @@ require_fixed "kernel.oops_limit = 100" mkosi.extra/usr/lib/sysctl.d/70-particle
 require_fixed "kernel.warn_limit = 100" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.printk = 3 3 3 3" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "setsebool -P deny_ptrace=on" mkosi.postinst.chroot
+require_fixed "handle-unknown=deny" mkosi.postinst.chroot
 require_fixed "if getsebool container_allow_ptrace" mkosi.postinst.chroot
 require_fixed "setsebool -P container_allow_ptrace=off" mkosi.postinst.chroot
 require_fixed "trap restore_preload EXIT" mkosi.postinst.chroot
@@ -314,13 +352,16 @@ require_fixed "restore_preload" mkosi.postinst.chroot
 require_fixed "semodule -X 300 -i" mkosi.postinst.chroot
 require_fixed "chmod 0755 /usr/bin/mount /usr/bin/umount" mkosi.postinst.chroot
 require_fixed "libhardened_malloc.so" mkosi.extra/etc/ld.so.preload
+require_fixed "L /etc/ld.so.preload" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 require_fixed 'DefaultEnvironment="LD_PRELOAD=libhardened_malloc.so libno_rlimit_as.so"'     mkosi.extra/usr/lib/systemd/system.conf.d/40-particleos-hardening.conf
 require_fixed "DumpCore=no" mkosi.extra/usr/lib/systemd/system.conf.d/40-particleos-hardening.conf
 require_fixed "DefaultLimitCORE=0" mkosi.extra/usr/lib/systemd/system.conf.d/40-particleos-hardening.conf
 require_fixed "DumpCore=no" mkosi.extra/usr/lib/systemd/user.conf.d/40-particleos-hardening.conf
 require_fixed "* hard core 0" mkosi.extra/usr/lib/security/limits.d/60-particleos-no-coredump.conf
 require_fixed "Storage=none" mkosi.extra/usr/lib/systemd/coredump.conf.d/40-particleos.conf
-require_fixed "disable systemd-coredump.socket"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
+require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"' mkosi.finalize
+require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"' mkosi.finalize
+require_fixed "disable authselect-apply-changes.service"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 
 resolved_conf=mkosi.extra/usr/lib/systemd/resolved.conf.d/40-particleos-dns.conf
 require_fixed "DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com" "$resolved_conf"
@@ -333,6 +374,11 @@ require_fixed "MulticastDNS=no" "$resolved_conf"
 require_fixed "UseDNS=no"     mkosi.extra/usr/lib/systemd/network/89-ethernet.network.d/40-particleos-dns.conf
 require_fixed "L+ /etc/resolv.conf - - - - ../run/systemd/resolve/stub-resolv.conf"     mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 require_fixed "Before=network-pre.target"     mkosi.extra/usr/lib/systemd/system/nftables.service.d/40-particleos-policy.conf
+reject_fixed "NoNewPrivileges=yes"     mkosi.extra/usr/lib/systemd/system/nftables.service.d/40-particleos-policy.conf
+require_fixed "NoNewPrivileges=no" \
+    mkosi.extra/usr/lib/systemd/system/chronyd.service.d/40-particleos-hardening.conf
+reject_fixed "NoNewPrivileges=yes" \
+    mkosi.extra/usr/lib/systemd/system/chronyd.service.d/40-particleos-hardening.conf
 
 for socket_policy in \
         secureblue_socket_utils.cil \
@@ -344,6 +390,11 @@ for socket_policy in \
     [[ -f "mkosi.extra/usr/lib/particleos/selinux/$socket_policy" ]] ||
         fail "missing SELinux socket policy: $socket_policy"
 done
+require_fixed "/usr/lib/particleos/selinux/particleos_homed_login.cil" mkosi.postinst.chroot
+require_fixed ".local_login_t .systemd_userdbd_runtime_t" \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
+require_fixed ".chkpwd_t .systemd_userdbd_runtime_t" \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 require_fixed "alg_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_alg_sockets.cil
 require_fixed "key_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil
 require_fixed "netlink_xfrm_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil
