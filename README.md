@@ -39,7 +39,8 @@ The default image has:
   prevention;
 - `mount` and `umount` retained for `run0` and recovery without their Fedora
   SUID-root mode, with the unused SUID `pam_timestamp_check` helper removed;
-  only PAM's `unix_chkpwd` and Polkit's authentication helper retain SUID;
+  only PAM's `unix_chkpwd` and Polkit's authentication helper remain SUID
+  executable entry points;
 - secureblue's signed `hardened_malloc` package preloaded for system and user
   processes, with the compatibility shim used by its systemd service baseline;
 - irreversible kernel-module loading disablement after the early boot modules
@@ -279,7 +280,7 @@ run0 systemctl daemon-reload
 Install the administrator's Ed25519 public key before relying on remote access.
 Keep console or out-of-band access available: a malformed allowlist correctly
 fails the firewall reload rather than opening SSH. The daemon reload repopulates
-the dynamic cgroup set if `systemd-sysupdate.service` is active while the
+the dynamic cgroup set if `systemd-sysupdate-update.service` is active while the
 firewall ruleset is replaced.
 
 ## DNS trust and failure mode
@@ -313,13 +314,13 @@ the A/B `/usr`, verity metadata, and UKI artifacts produced by OBS. Their
 artifact match patterns derive from the `%M` image ID, so they resolve to
 `ParticleOS-Webserver` on this image.
 
-The enabled timer runs updates inside `systemd-sysupdate.service`. PID 1
+The enabled timer runs updates inside `systemd-sysupdate-update.service`. PID 1
 publishes that unit's dynamic cgroup ID into nftables, granting only the
 updater—not generic root processes—new HTTPS egress. Trigger a manual check
 through the unit rather than executing the binary directly:
 
 ```sh
-run0 systemctl start systemd-sysupdate.service
+run0 systemctl start systemd-sysupdate-update.service
 ```
 
 The image retains `systemd-pull` from `systemd-container` solely as

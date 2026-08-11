@@ -29,7 +29,7 @@ disable authselect-apply-changes.service
 enable systemd-homed-firstboot.service
 enable preset-global.service
 enable systemd-oomd.service
-enable systemd-sysupdate.timer
+enable systemd-sysupdate-update.timer
 enable fstrim.timer
 
 # systemd-container is installed only for systemd-pull. Its other units and

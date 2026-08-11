@@ -333,8 +333,8 @@ require_fixed "meta skuid systemd-resolve ip daddr { 1.1.1.1, 1.0.0.1 } tcp dpor
 require_fixed "meta skuid systemd-resolve ip6 daddr { 2606:4700:4700::1111, 2606:4700:4700::1001 } tcp dport 853 accept"     mkosi.extra/usr/lib/particleos/nftables.conf
 require_fixed "meta skuid chrony tcp dport 4460 accept"     mkosi.extra/usr/lib/particleos/nftables.conf
 require_fixed "socket cgroupv2 level 2 @sysupdate_cgroups tcp dport 443 accept"     mkosi.extra/usr/lib/particleos/nftables.conf
-require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups"     mkosi.extra/usr/lib/systemd/system/systemd-sysupdate.service.d/40-particleos-egress.conf
-require_fixed "enable systemd-sysupdate.timer"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
+require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups"     mkosi.extra/usr/lib/systemd/system/systemd-sysupdate-update.service.d/40-particleos-egress.conf
+require_fixed "enable systemd-sysupdate-update.timer"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 if grep -Fq 'meta l4proto { tcp, udp } accept' mkosi.extra/usr/lib/particleos/nftables.conf; then
     fail "raw prerouting must not admit every TCP and UDP tuple"
 fi
@@ -408,7 +408,6 @@ require_fixed "(deny userns_restricted_domain self (user_namespace (create))))" 
 require_fixed "(.init_t .kernel_t .systemd_homework_t .systemd_importd_t))" \
     mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
 require_fixed "chmod 0755 /usr/bin/mount /usr/bin/umount" mkosi.postinst.chroot
-require_fixed "-exec chmod 0644 {} +" mkosi.postinst.chroot
 require_fixed "libhardened_malloc.so" mkosi.extra/etc/ld.so.preload
 require_fixed "L /etc/ld.so.preload" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 require_fixed 'DefaultEnvironment="LD_PRELOAD=libhardened_malloc.so libno_rlimit_as.so"'     mkosi.extra/usr/lib/systemd/system.conf.d/40-particleos-hardening.conf

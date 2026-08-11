@@ -230,7 +230,7 @@ protocol-specific flows. systemd-resolved can connect only to Cloudflare's two
 IPv4 and two IPv6 anycast endpoints on TCP/853; UDP/TCP port 53 egress is
 absent. nginx and generic root processes cannot initiate a connection.
 systemd's dynamic nftables integration grants HTTPS only to the realized
-`systemd-sysupdate.service` cgroup; ordinary login users cannot create
+`systemd-sysupdate-update.service` cgroup; ordinary login users cannot create
 outbound connections. After an administrator replaces the nftables ruleset,
 the documented `systemctl daemon-reload` step repopulates the active unit's
 dynamic cgroup membership.
@@ -271,6 +271,12 @@ the PAM/polkit authentication path. A real getty and run0 authentication test
 confirmed that stripping `unix_chkpwd` prevents the privileged transient unit's
 PAM session from starting; the polkit helper performs the interactive password
 check itself.
+The `hardened_malloc` and `no_rlimit_as` shared objects retain secureblue's
+mode 4644. They have no execute bits and are not privilege-transition entry
+points; the set-user-ID bit is metadata required by glibc's secure-execution
+loader before it honors a preloaded library from a trusted system directory.
+Stripping that bit was rejected by a real console-login and run0 test because
+it silently removed the hardened allocator from the authentication path.
 
 SSH is socket activated but unreachable until an administrator populates
 `/etc/particleos/ssh-allowlist.nft`. SSH accepts only public-key authentication
