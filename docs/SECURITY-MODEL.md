@@ -164,9 +164,10 @@ through newly created, policy-labeled sockets.
 The authenticated `/usr` mount is also `nosuid`. SELinux therefore requires a
 separate `process2:nosuid_transition` permission before a program on `/usr` may
 enter its daemon domain. Fedora grants this to some systemd services but not to
-udev or the system D-Bus broker. ParticleOS grants only the two missing
-`init_t` transitions, to `udev_t` and `system_dbusd_t`; it does not grant the
-related `nnp_transition` permission or any runtime-file access to `init_t`.
+every daemon shipped here. ParticleOS grants only the missing `init_t`
+transitions to `udev_t`, `system_dbusd_t`, `ldconfig_t`, `iptables_t`,
+`sshd_keygen_t`, and `chronyd_t`; it does not grant the related
+`nnp_transition` permission or any runtime-file access to `init_t`.
 Fedora also labels systemd's udev compatibility launcher symlink `lib_t`
 instead of `udev_exec_t`. The host unit therefore executes its correctly
 labelled `/usr/bin/udevadm` target directly while retaining the
@@ -182,7 +183,8 @@ policy load. It clears the modprobe helper path and sets
 `kernel.modules_disabled=1`, which cannot be reversed until reboot. This
 reduces post-boot kernel attack surface but means required hardware, storage,
 crypto, and network drivers must be available in the UKI/initrd or declared in
-`modules-load.d` before release.
+`modules-load.d` before release. This includes `vfat`, which is needed to mount
+the EFI System Partition after switch-root.
 
 Yama scope 3 and the SELinux `deny_ptrace` boolean prohibit process attachment;
 scope 3 cannot be relaxed without rebooting. Unprivileged BPF and io_uring are
