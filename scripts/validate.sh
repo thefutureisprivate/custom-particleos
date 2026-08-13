@@ -55,6 +55,7 @@ role_policy=mkosi.role.conf
 obs_config=mkosi.obs.conf
 role_obs_config=mkosi.role.obs.conf
 obs_postoutput=mkosi.scripts/particleos-obs-postoutput
+obs_build=mkosi.scripts/particleos-obs-build
 obs_recipe=.obs/fedora/x86-64/mkosi.conf
 service_template=.obs/fedora/x86-64/_service.example
 postinst=mkosi.scripts/particleos.postinst.chroot
@@ -154,12 +155,14 @@ require_fixed "PostOutputScripts=%D/$obs_postoutput" "$role_obs_config"
 require_fixed "Include=%D/mkosi.role.obs.conf" "$role_policy"
 reject_fixed "Include=mkosi-obs" "$role_policy"
 test -x "$obs_postoutput" || fail "$obs_postoutput must be executable"
+test -x "$obs_build" || fail "$obs_build must be executable"
 require_fixed "import mkosi.resources" "$obs_postoutput"
-require_fixed "exec \"\$mkosi_obs_postoutput\" \"\$@\"" "$obs_postoutput"
-require_fixed 'base_manifest="$OUTPUTDIR/base.manifest"' "$obs_postoutput"
-require_fixed 'Shared-base manifest is missing' "$obs_postoutput"
-require_fixed 'role_manifest_candidates=("$OUTPUTDIR/${IMAGE_ID}_"*.manifest)' "$obs_postoutput"
-require_fixed '"${role_manifest%.manifest}.base.manifest"' "$obs_postoutput"
+require_fixed '"$mkosi_obs_postoutput" "$@"' "$obs_postoutput"
+require_fixed "BuildScripts=/usr/src/packages/SOURCES/custom-particleos/mkosi.scripts/particleos-obs-build" "$obs_postoutput"
+require_fixed "import mkosi.resources" "$obs_build"
+require_fixed '"$mkosi_obs_build" "$@"' "$obs_build"
+require_fixed "base.manifest.gz" "$obs_build"
+require_fixed 'cp --reflink=auto -- "$base_manifest" "$obs_output_dir/"' "$obs_build"
 
 require_fixed "# needssslcertforbuild" "$obs_recipe"
 require_fixed "Dependencies=webserver" "$obs_recipe"

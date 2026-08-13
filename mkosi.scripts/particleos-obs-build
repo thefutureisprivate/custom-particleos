@@ -1,0 +1,32 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+
+# Keep the upstream signing implementation authoritative, then add the shared
+# base package inventory which its IMAGE_ID-only collector otherwise omits.
+mkosi_obs_build="$('/usr/bin/python3' -c '
+from pathlib import Path
+import mkosi.resources
+print(Path(mkosi.resources.__file__).parent / "mkosi-obs" / "mkosi.build")
+')"
+
+if [[ ! -x "$mkosi_obs_build" ]]; then
+    echo "mkosi-obs build signer is missing or not executable: $mkosi_obs_build" >&2
+    exit 1
+fi
+
+"$mkosi_obs_build" "$@"
+
+base_manifest=/usr/src/packages/SOURCES/base.manifest.gz
+if [[ ! -f "$base_manifest" ]]; then
+    echo "Compressed shared-base manifest is missing: $base_manifest" >&2
+    exit 1
+fi
+
+obs_output_dir=/work/src/usr/src/packages/OTHER
+if [[ ! -d "$obs_output_dir" ]]; then
+    echo "OBS output directory is missing: $obs_output_dir" >&2
+    exit 1
+fi
+
+cp --reflink=auto -- "$base_manifest" "$obs_output_dir/"
