@@ -15,7 +15,7 @@ if [[ ! -x "$mkosi_obs_postoutput" ]]; then
     exit 1
 fi
 
-obs_build_wrapper="$SRCDIR/mkosi.scripts/particleos-obs-build"
+obs_build_wrapper="$SRCDIR/usr/src/packages/SOURCES/custom-particleos/mkosi.scripts/particleos-obs-build"
 if [[ ! -x "$obs_build_wrapper" ]]; then
     echo "ParticleOS OBS build wrapper is missing or not executable: $obs_build_wrapper" >&2
     exit 1
