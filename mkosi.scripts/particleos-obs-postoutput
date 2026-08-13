@@ -23,9 +23,11 @@ fi
 
 "$mkosi_obs_postoutput" "$@"
 
-# mkosi post-output sandboxes expose only the current image's staging tree.
-# Select the reviewed SCM wrapper for the second pass; it runs the upstream
-# signer and then preserves the already-compressed dependency manifest.
+# OBS constructs the signing pass from the first pass's output files, without
+# retaining the extracted SCM tree. Carry the reviewed wrapper forward with
+# those files so mkosi can run it in the signing pass.
+cp --reflink=auto -- "$obs_build_wrapper" "$OUTPUTDIR/particleos-obs-build"
+
 second_stage_config="$OUTPUTDIR/mkosi.conf"
 if [[ ! -f "$second_stage_config" ]]; then
     echo "mkosi-obs did not generate the second-stage configuration: $second_stage_config" >&2
@@ -34,7 +36,7 @@ fi
 
 printf '%s\n' \
     '' \
-    '[Build]' \
+    '[Content]' \
     'BuildScripts=' \
-    'BuildScripts=/usr/src/packages/SOURCES/custom-particleos/mkosi.scripts/particleos-obs-build' \
+    'BuildScripts=/usr/src/packages/SOURCES/particleos-obs-build' \
     >>"$second_stage_config"
