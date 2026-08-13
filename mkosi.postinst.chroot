@@ -5,6 +5,29 @@ set -euo pipefail
 authselect select local
 authselect enable-feature with-systemd-homed
 
+# Account recovery uses systemd-homed's current explicit adoption API. Keep it
+# as a hard image-build requirement.
+homectl --help | grep -F "adopt PATH" >/dev/null
+
+# run0 authenticates through polkit. Require its current root, socket-activated
+# PAM helper units so the helper executable does not need a SUID transition.
+for polkit_helper_unit in \
+    polkit-agent-helper.socket \
+    polkit-agent-helper@.service; do
+    [[ -f "/usr/lib/systemd/system/$polkit_helper_unit" ]]
+done
+
+# ParticleOS follows the current upstream sysupdate unit API. Fedora 44's
+# stable systemd still ships the superseded systemd-sysupdate.service/timer
+# names, so make an accidental repository downgrade fail at image build time.
+for current_systemd_unit in \
+    systemd-sysupdate-update.service \
+    systemd-sysupdate-update.timer \
+    systemd-sysupdate-reboot.service \
+    systemd-sysupdate-reboot.timer; do
+    [[ -f "/usr/lib/systemd/system/$current_systemd_unit" ]]
+done
+
 # systemd-pull verifies OBS's signed SHA256SUMS with this exclusive project
 # key. Its gpg --keyring interface requires the binary OpenPGP form, so dearmor
 # the pinned repository key before mkosi's SELinux relabel pass and replace the
@@ -38,12 +61,6 @@ if ! grep -qx 'handle-unknown=deny' /etc/selinux/semanage.conf; then
 fi
 
 setsebool -P deny_ptrace=on
-# container_allow_ptrace was removed from Fedora's SELinux policy. Keep it
-# disabled on policy versions that still define it without making newer
-# policy installations fail.
-if getsebool container_allow_ptrace >/dev/null 2>&1; then
-    setsebool -P container_allow_ptrace=off
-fi
 semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_harden_userns.cil \
     /usr/lib/particleos/selinux/secureblue_socket_utils.cil \
@@ -54,10 +71,6 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/particleos_homed_login.cil
 restore_preload
 trap - EXIT
-
-# Retain the administration tools for run0 and recovery, but do not let an
-# unprivileged caller cross the root boundary through util-linux SUID mode.
-chmod 0755 /usr/bin/mount /usr/bin/umount
 
 if [[ -d /etc/pam.d ]]; then
     find /etc/pam.d -mindepth 1 -exec mv {} /usr/lib/pam.d \;
@@ -78,41 +91,81 @@ done
 find /usr/lib/pam.d/ -mindepth 1 -exec sed --in-place '/pam_shells.so/d' {} \;
 find /usr/lib/pam.d/ -mindepth 1 -exec sed --in-place '/pam_securetty.so/d' {} \;
 
-# Fedora ships the systemd-userdb SSH drop-in disabled as an example.
-if [[ -f /usr/lib/tmpfiles.d/20-systemd-userdb.conf.example ]]; then
-    ln --symbolic 20-systemd-userdb.conf.example /usr/lib/tmpfiles.d/20-systemd-userdb.conf
-fi
+# Fedora ships the current systemd-userdb SSH integration disabled as an
+# example. Make its presence a build invariant instead of carrying a fallback.
+ln --symbolic 20-systemd-userdb.conf.example /usr/lib/tmpfiles.d/20-systemd-userdb.conf
 
 # Keep the installed host headless.
 ln --symbolic --force multi-user.target /usr/lib/systemd/system/default.target
 
-# systemd creates this private runtime directory before ExecStartPre. Mirror
-# that lifecycle only for the build-time configuration test.
-install --directory --mode=0700 /run/nginx
-nginx -e stderr -t -c /usr/lib/particleos/nginx/nginx.conf
-rm --force /run/nginx/nginx.pid
-rmdir /run/nginx
+# Select exactly one current appliance role. This also makes unknown or combined
+# role configurations fail during the image build instead of producing an
+# ambiguous OS identity.
+particleos_role_count=0
+IFS=, read -r -a configured_profiles <<<"$PROFILES"
+for configured_profile in "${configured_profiles[@]}"; do
+    case "$configured_profile" in
+        webserver | mailserver | dnsserver)
+            ((particleos_role_count += 1))
+            ;;
+    esac
+done
+if ((particleos_role_count != 1)); then
+    echo "exactly one ParticleOS role profile is required: $PROFILES" >&2
+    exit 1
+fi
 
-# Give the image a distinct identity without changing Fedora's package identity.
+case "$IMAGE_ID" in
+    ParticleOS-Webserver)
+        particleos_role=Webserver
+        particleos_role_id=webserver
+        particleos_hostname='particle-web-????-????'
+
+        # systemd creates this private runtime directory before ExecStartPre.
+        # Mirror that lifecycle only for the build-time configuration test.
+        install --directory --mode=0700 /run/nginx
+        nginx -e stderr -t -c /usr/lib/particleos/nginx/nginx.conf
+        rm --force /run/nginx/nginx.pid
+        rmdir /run/nginx
+        ;;
+    ParticleOS-Mailserver)
+        particleos_role=Mailserver
+        particleos_role_id=mailserver
+        particleos_hostname='particle-mail-????-????'
+        ;;
+    ParticleOS-Dnsserver)
+        particleos_role=DNS Server
+        particleos_role_id=dnsserver
+        particleos_hostname='particle-dns-????-????'
+        ;;
+    *)
+        echo "unsupported ParticleOS image ID: $IMAGE_ID" >&2
+        exit 1
+        ;;
+esac
+
+# Give the image a distinct OS identity without changing Fedora's package
+# identity. mkosi writes IMAGE_ID and IMAGE_VERSION after this script and the
+# finalizer verifies them before the tree is sealed.
 (
     # shellcheck source=/dev/null
     . /usr/lib/os-release
     cat >/usr/lib/os-release <<EOF
-NAME="ParticleOS Webserver (Fedora Flavour)"
+NAME="ParticleOS $particleos_role (Fedora Flavour)"
 ID="$ID"
-ID_LIKE="particleos-$ID"
-PRETTY_NAME="ParticleOS Webserver/$NAME $VERSION"
-FANCY_NAME="ParticleOS Webserver/$NAME $VERSION"
+ID_LIKE="particleos-$particleos_role_id $ID"
+PRETTY_NAME="ParticleOS $particleos_role/$NAME $VERSION"
+FANCY_NAME="ParticleOS $particleos_role/$NAME $VERSION"
 VERSION="$VERSION"
 VERSION_ID="$VERSION_ID"
 ANSI_COLOR="38:2:252:186:3;1;49"
-ANSI_COLOR_REVERSE="48;2;252:186:3;1;30"
-DEFAULT_HOSTNAME="particle-web-????-????"
-HOME_URL="https://github.com/systemd/particleos/"
+ANSI_COLOR_REVERSE="48;2:252:186:3;1;30"
+DEFAULT_HOSTNAME="$particleos_hostname"
+HOME_URL="https://github.com/thefutureisprivate/custom-particleos/"
 EOF
 
     cat >/usr/lib/issue <<EOF
-ParticleOS Webserver/$NAME Flavour $VERSION
+ParticleOS $particleos_role/$NAME Flavour $VERSION
 Kernel \r on an \m (\l)
 
 EOF

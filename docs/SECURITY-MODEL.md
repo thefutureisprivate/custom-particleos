@@ -1,21 +1,25 @@
 # Security model
 
-This document describes the default security properties of ParticleOS
-Webserver. It is a deployment model, not a claim that this Fedora-derived image
-is GrapheneOS or provides Android's security architecture.
+This document describes the shared security properties of the ParticleOS
+server images and the production webserver role. It is a deployment model, not
+a claim that these Fedora-derived images are GrapheneOS or provide Android's
+security architecture. Mailserver and DNS server are dormant configuration
+placeholders with empty package payloads and closed role-specific network
+chains. Mail is reserved for a future project-provided Stalwart package; DNS is
+empty. Neither is a current OBS build target.
 
 Reference revisions are pinned in [../NOTICE](../NOTICE).
 
 ## Security objectives
 
-The image is designed to preserve:
+The shared base is designed to preserve:
 
 - authenticity and integrity of the boot chain and immutable operating-system
   payload;
 - confidentiality of writable system state when the machine is powered off;
-- integrity of root-owned web content and nginx policy;
+- integrity of root-owned web content and nginx policy in the webserver role;
 - restricted remote administration with no password or root SSH;
-- containment of nginx, Certbot, OpenSSH, chrony, and firewall compromise;
+- containment of OpenSSH, chrony, firewall, and web-role nginx/Certbot compromise;
 - a small, reviewable mutable configuration surface.
 
 Availability against volumetric denial of service, malicious firmware,
@@ -29,12 +33,22 @@ what the image alone can guarantee.
    Boot.
 2. The signed UKI contains the kernel, command line, and initrd. The command line
    enables lockdown confidentiality mode, IPE enforcement, auditing, SELinux,
-   and signed dm-verity discovery.
+   signed dm-verity discovery, and `nosuid,nodev` writable-root mounting.
 3. The signed verity metadata authenticates the immutable usr partition.
 4. TPM2 PCR 7 policies unlock encrypted root and swap only while UEFI Secure
    Boot uses the enrolled OBS project certificate.
 5. systemd-sysupdate writes complete A/B usr, verity, signature, and UKI
    artifacts; boot counting retains a fallback instance.
+
+The shared base enables the update and conditional-reboot timers. New UKIs
+receive three attempts. During a counted boot,
+`systemd-boot-check-no-failures.service` blocks `boot-complete.target` if a
+unit failed; the webserver also requires a valid nginx configuration and a
+local HTTP response. A failed gate triggers a reboot without blessing that
+slot, so systemd-boot eventually selects the previous blessed UKI and A/B usr
+set. Both forced-reboot actions require the `LoaderBootCountPath` EFI variable;
+they cannot turn a normal, already blessed boot into a permanent reboot loop.
+This availability rollback does not provide cryptographic anti-rollback.
 
 The OBS project certificate and membership, source revision, Fedora package
 repositories and keys, systemd repository, firmware trust store, and reviewed
@@ -66,17 +80,17 @@ therefore explicit lower-layer trust dependencies.
 
 | Area | Default | Primary source |
 |---|---|---|
-| Image layout | Project-key-only Secure Boot, signed UKI, A/B usr, dm-verity, PCR 7-bound TPM2 root and swap | systemd/particleos |
+| Image layout | Project-key-only Secure Boot, signed UKI, A/B usr, dm-verity, PCR 7-bound TPM2 root and swap, `nosuid,nodev` writable root | systemd/particleos |
 | Kernel command line | audit, SELinux enforcing, IPE, lockdown, signed modules, allocation/free initialization, stack/allocator randomization, no initrd shell, vsyscall, or IA-32 emulation | particleOS plus GrapheneOS and secureblue policy |
 | Kernel runtime | SELinux plus irreversible Yama ptrace denial, targeted user-namespace denial, irreversible unprivileged BPF and io_uring denial, restricted perf, kexec, kernel logs, core dumps, and module loading | GrapheneOS infrastructure and secureblue |
 | Memory allocator | signed secureblue `hardened_malloc` package globally preloaded with `no_rlimit_as` for managed services | secureblue |
-| Network | default-deny nftables input/forward/output, pre-conntrack service filtering, source-keyed admission, dual-stack FIB RPF, strong host model, stateful service egress | GrapheneOS infrastructure |
+| Network | default-deny nftables input/forward/output, role-specific pre-conntrack filtering, source-keyed web admission, dual-stack FIB RPF, strong host model, identity/protocol/rate-limited service egress | GrapheneOS infrastructure |
 | DNS | systemd-resolved, authenticated Cloudflare DoT only, local DNSSEC validation, no DHCP/RA DNS or plaintext fallback | systemd and secureblue guidance |
 | SELinux sockets | userspace denial for AF_ALG, IPsec control, packet-radio, and unused legacy socket classes | secureblue |
 | Time | multiple authenticated NTS sources with source agreement | GrapheneOS infrastructure |
 | SSH | Ed25519 keys only, ML-KEM hybrid key exchange, no passwords/root/forwarding, source allowlist and rate limit | GrapheneOS infrastructure |
-| nginx | sandboxed service, bounded journal logging, HTTP/3, request/admission bounds, modern TLS, strict headers, no tokens or autoindex | GrapheneOS infrastructure and grapheneos.org |
-| Certificates | non-root Certbot webroot HTTP-01, required short-lived ACME profile, private state, fixed validation/reload boundary | GrapheneOS infrastructure plus Certbot |
+| nginx (webserver) | sandboxed service, bounded journal logging, HTTP/3, request/admission bounds, modern TLS, strict headers, no tokens or autoindex | GrapheneOS infrastructure and grapheneos.org |
+| Certificates (webserver) | non-root Certbot webroot HTTP-01, required short-lived ACME profile, private state, fixed validation/reload boundary | GrapheneOS infrastructure plus Certbot |
 | Services | capability bounds, namespaces, read-only filesystem, syscall/address-family restrictions, OOM policy | GrapheneOS infrastructure |
 | Privilege elevation | systemd run0, isolated transient service, polkit authentication, no setuid sudo/mount/umount | systemd |
 
@@ -105,7 +119,8 @@ future review and reconciliation explicit.
 
 The usr slots are immutable and authenticated. Root and swap are writable only
 after TPM2-backed decryption bound to PCR 7 and the exclusive OBS project
-Secure Boot authority. Expected-PCR signing is deliberately disabled because
+Secure Boot authority. The root containing `/etc`, `/home`, and `/var` is
+mounted `nosuid,nodev`. Expected-PCR signing is deliberately disabled because
 the OBS RSA-4096 signing key cannot be loaded as an external policy key by
 common TPM2 implementations. The mkosi-obs PCR split artifact is explicitly
 reset as well; otherwise mkosi would still embed that public key and
@@ -197,9 +212,10 @@ policy-specific labels.
 
 ## Network policy
 
-The nftables service loads the complete immutable policy before the network is
-configured. nginx, Certbot renewal, the SSH socket, and chrony require both the
-firewall and module-lockdown services, so failure is closed.
+The nftables service loads the complete shared and selected-role policy before
+the network is configured. The SSH socket and chrony require the firewall and
+module-lockdown services; the webserver adds the same requirements to nginx and
+Certbot renewal, so failure is closed.
 The nftables loader and chronyd enter Fedora's dedicated `iptables_t` and
 `chronyd_t` SELinux domains. `NoNewPrivileges=yes` is therefore deliberately
 not applied to those units because it prevents these security-domain
@@ -213,25 +229,28 @@ it rejects callers that have not yet added `MFD_NOEXEC_SEAL`, including
 Fedora's system D-Bus broker, while level 1 still closes the implicit
 executable-memfd behavior.
 
-Inbound policy permits:
+Shared inbound policy permits:
 
 - established and related traffic;
 - DHCP client replies and necessary rate-limited ICMP/ICMPv6;
-- new TCP connections to ports 80 and 443 and QUIC on UDP 443 with global and
-  source-keyed admission limits, plus per-source and global concurrent TCP
-  connection ceilings below nginx's worker capacity;
+- in the webserver role only, new TCP connections to ports 80 and 443 and QUIC
+  on UDP 443 with global and source-keyed admission limits, plus per-source and
+  global concurrent TCP connection ceilings below nginx's worker capacity;
 - new TCP connections to port 22 only from the mutable IPv4 or IPv6
   administrator sets, with a much lower rate limit.
 
-Forwarding is denied. Strict FIB checks implement reverse-path filtering for
-both address families and reject weak-host traffic.
 
-Outbound policy first permits established replies. systemd-network, chrony
-(NTP/UDP 123 and NTS-KE/TCP 4460), and Certbot can create only their
-protocol-specific flows. systemd-resolved can connect only to Cloudflare's two
-IPv4 and two IPv6 anycast endpoints on TCP/853; UDP/TCP port 53 egress is
-absent. nginx and generic root processes cannot initiate a connection.
-systemd's dynamic nftables integration grants HTTPS only to the realized
+The dormant mail and DNS placeholders add no public ingress and select no
+service packages. Forwarding is denied. Strict FIB checks implement
+reverse-path filtering for both address families and reject weak-host traffic.
+
+Outbound policy first permits established replies. systemd-network can create
+only DHCP client flows, chrony only NTP/UDP 123 and NTS-KE/TCP 4460 flows, and
+web-role Certbot only rate-limited TCP/80 and TCP/443 flows. systemd-resolved
+can connect only to Cloudflare's two IPv4 and two IPv6 anycast endpoints on
+TCP/853; UDP/TCP port 53 egress is absent. nginx and generic root processes
+cannot initiate a connection. systemd's dynamic nftables integration grants
+rate-limited HTTPS only to the realized
 `systemd-sysupdate-update.service` cgroup; ordinary login users cannot create
 outbound connections. After an administrator replaces the nftables ruleset,
 the documented `systemctl daemon-reload` step repopulates the active unit's
@@ -263,22 +282,22 @@ the VPS console and creates a directory-backed user in `wheel` and
 `systemd-journal` inside the TPM2/LUKS-encrypted writable root. Directory
 storage is deliberate: ordinary directory creation receives
 `user_home_dir_t`, whereas Btrfs subvolume roots are created without an SELinux
-label. Polkit authorizes run0; sudo is absent.
+label. Polkit authorizes run0; sudo is absent. Polkit's private socket activates
+its PAM helper as a root service, so authentication does not require a SUID
+executable. If that socket is unavailable, direct helper fallback fails closed
+after finalization removes the set-ID bit.
+
 Fedora's `mount` and `umount` binaries remain available at mode 0755, so
 administrators and recovery units can use them through an already privileged
 `run0` context without exposing their package-default SUID transition.
-The unused `pam_timestamp_check` helper is deleted. `unix_chkpwd` and
-`polkit-agent-helper-1` retain their Fedora SUID modes because they are part of
-the PAM/polkit authentication path. A real getty and run0 authentication test
-confirmed that stripping `unix_chkpwd` prevents the privileged transient unit's
-PAM session from starting; the polkit helper performs the interactive password
-check itself.
-The `hardened_malloc` and `no_rlimit_as` shared objects retain secureblue's
-mode 4644. They have no execute bits and are not privilege-transition entry
-points; the set-user-ID bit is metadata required by glibc's secure-execution
-loader before it honors a preloaded library from a trusted system directory.
-Stripping that bit was rejected by a real console-login and run0 test because
-it silently removed the hardened allocator from the authentication path.
+
+The finalizer strips set-user-ID and set-group-ID bits from every executable
+under the shipped `/usr`, `/etc`, `/opt`, and `/var` trees and fails the
+build if any remain. This includes `unix_chkpwd` and
+`polkit-agent-helper-1`. The `hardened_malloc` and `no_rlimit_as` shared
+objects retain secureblue's non-executable mode 4644: their set-user-ID bit is
+loader metadata, not a privilege-transition entry point, and allows glibc to
+preload them in secure-execution mode.
 
 SSH is socket activated but unreachable until an administrator populates
 `/etc/particleos/ssh-allowlist.nft`. SSH accepts only public-key authentication
@@ -297,9 +316,13 @@ helper and SELinux must transition it from `sshd_t` to `sshd_session_t`.
 Initial public-key installation and firewall changes therefore require console
 or trusted out-of-band access.
 
-Mutable operator-controlled paths are intentionally limited:
+Shared mutable operator-controlled paths are intentionally limited to:
 
-- `/etc/particleos/ssh-allowlist.nft`;
+- `/home/*.homedir` and explicitly adopted systemd-homed directories;
+- `/etc/particleos/ssh-allowlist.nft`.
+
+The webserver role additionally permits:
+
 - `/var/www/html` (labelled for read-only nginx content; Certbot can write only
   `.well-known/acme-challenge`);
 - `/var/lib/particleos/nginx/conf.d`;
@@ -318,7 +341,7 @@ Certbot can create only IPv4 and IPv6 sockets; AF_UNIX is excluded, making the
 systemd and D-Bus manager sockets unreachable without hiding
 `/run/systemd/resolve`, which `/etc/resolv.conf` needs for ACME DNS lookups.
 
-## nginx scope
+## Webserver role scope
 
 The default HTTP virtual host permits GET and HEAD only for the ACME challenge
 path and returns 404 for all other requests, avoiding a Host-header-controlled
@@ -345,7 +368,7 @@ environment file and replaces the vendor command, leaving the immutable
 
 ## Release verification
 
-A release is not complete until the exact OBS artifact has been:
+A webserver release is not complete until the exact OBS artifact has been:
 
 1. built from an immutable reviewed commit;
 2. checked against every OBS project-signed per-artifact SHA-256 file and

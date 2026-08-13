@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Verify the ParticleOS webserver before blessing this boot
+Documentation=man:systemd-bless-boot.service(8)
+ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
+Requires=nginx.service
+After=nginx.service
+Before=boot-complete.target
+FailureAction=reboot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/particleos/health/webserver
+CapabilityBoundingSet=
+DevicePolicy=closed
+IPAddressAllow=localhost
+IPAddressDeny=any
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077
+
+[Install]
+RequiredBy=boot-complete.target

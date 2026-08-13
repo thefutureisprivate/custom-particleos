@@ -22,6 +22,44 @@ chroot "$BUILDROOT" /usr/bin/chcon \
     system_u:object_r:bootloader_exec_t:s0 \
     /usr/lib/systemd/systemd-bless-boot
 
+# hostnamectl reads these mkosi-managed fields from os-release. Keep this a
+# final-tree assertion because mkosi adds them after the post-install script.
+grep -Fqx "IMAGE_ID=\"$IMAGE_ID\"" "$BUILDROOT/usr/lib/os-release"
+if [[ -n ${IMAGE_VERSION:-} ]]; then
+    grep -Fqx "IMAGE_VERSION=\"$IMAGE_VERSION\"" "$BUILDROOT/usr/lib/os-release"
+fi
+
+# polkit authentication is handled by its root socket service, not by a SUID
+# process. Strip set-user-ID and set-group-ID from every executable file in the
+# shipped trees, including package additions which are not known in advance.
+# Starting find at each possible image filesystem keeps -xdev from skipping a
+# separately mounted /usr while avoiding build-environment pseudo-filesystems.
+for image_tree in \
+    "$BUILDROOT/etc" \
+    "$BUILDROOT/opt" \
+    "$BUILDROOT/usr" \
+    "$BUILDROOT/var"; do
+    [[ -d "$image_tree" ]] || continue
+    find "$image_tree" -xdev -type f -perm /6000 -perm /0111 \
+        -exec chmod a-s -- {} +
+done
+
+remaining_setid=$(
+    for image_tree in \
+        "$BUILDROOT/etc" \
+        "$BUILDROOT/opt" \
+        "$BUILDROOT/usr" \
+        "$BUILDROOT/var"; do
+        [[ -d "$image_tree" ]] || continue
+        find "$image_tree" -xdev -type f -perm /6000 -perm /0111 \
+            -print -quit
+    done
+)
+if [[ -n "$remaining_setid" ]]; then
+    echo "set-ID executable remains after finalization: $remaining_setid" >&2
+    exit 1
+fi
+
 # Capture the entirety of /etc in /usr/share/factory/etc so we can use
 # systemd-tmpfiles to symlink individual directories from it to /etc.
 mkdir -p "$BUILDROOT/usr/share/factory/"

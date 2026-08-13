@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# Reserved for the future project-provided Stalwart package. No mail service
+# or public role policy is shipped; all role ingress and egress remains closed.
+chain role_prerouting_raw {
+}
+
+chain role_input {
+}
+
+chain role_output {
+}

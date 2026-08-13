@@ -1,0 +1,3 @@
+later:
+- anti-rollback protection
+- pkcs7 for image downloads, rather than gpg

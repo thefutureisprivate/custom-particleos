@@ -11,12 +11,9 @@ disable NetworkManager-wait-online.service
 disable systemd-timesyncd.service
 enable chronyd.service
 disable chrony-wait.service
-enable certbot-renew.timer
-enable particleos-nginx-reload.path
 
-# Fail closed: nginx and SSH require the firewall.
+# Fail closed: SSH requires the firewall.
 enable nftables.service
-enable nginx.service
 enable particleos-module-lockdown.service
 
 # SSH is socket activated, key-only, and blocked by nftables until allowlisted.
@@ -26,9 +23,14 @@ enable sshd.socket
 # First-boot administration and core maintenance.
 disable authselect-apply-changes.service
 enable systemd-homed-firstboot.service
+# Authentication helpers run as root through a private AF_UNIX socket instead
+# of gaining privilege from executable file mode bits.
+enable polkit-agent-helper.socket
 enable preset-global.service
 enable systemd-oomd.service
 enable systemd-sysupdate-update.timer
+enable systemd-sysupdate-reboot.timer
+enable systemd-boot-check-no-failures.service
 enable fstrim.timer
 
 # systemd-container is installed only for systemd-pull. Its other units and

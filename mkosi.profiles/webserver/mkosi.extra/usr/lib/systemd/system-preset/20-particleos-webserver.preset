@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# Web services start only after the default-deny firewall is installed.
+enable certbot-renew.timer
+enable particleos-nginx-reload.path
+enable nginx.service
+enable particleos-webserver-health.service
