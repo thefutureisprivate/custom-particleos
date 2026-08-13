@@ -170,8 +170,9 @@ post-output hook discards only that aggregate before publication. Release
 verification uses the project-signed final per-artifact SHA-256 files from OBS.
 The published role manifest intentionally lists the packages added after the
 shared base was copied, matching mkosi's base-tree semantics. The separately
-published `base.manifest` is the full shared package inventory; review both
-manifests for a complete role image. Package-created loose boot artifacts are
+published `ParticleOS-Webserver_<version>_<arch>.base.manifest.gz` is the full
+shared package inventory; review both manifests for a complete role image.
+Package-created loose boot artifacts are
 removed at the base boundary so only role-generated, OBS-signed UKIs reach the
 final ESP.
 

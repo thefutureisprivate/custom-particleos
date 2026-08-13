@@ -2,6 +2,36 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -euo pipefail
 
+# mkosi correctly records BaseTrees packages only in the dependency image's
+# manifest. Prefix that manifest with the complete role image name so the
+# upstream OBS second signing pass carries it into the final output set.
+base_manifest="$OUTPUTDIR/base.manifest"
+if [[ ! -f "$base_manifest" ]]; then
+    printf 'Shared-base manifest is missing: %s\n' "$base_manifest" >&2
+    exit 1
+fi
+
+shopt -s nullglob
+role_manifest_candidates=("$OUTPUTDIR/${IMAGE_ID}_"*.manifest)
+shopt -u nullglob
+role_manifests=()
+for candidate in "${role_manifest_candidates[@]}"; do
+    if [[ $candidate != *.base.manifest ]]; then
+        role_manifests+=("$candidate")
+    fi
+done
+
+if ((${#role_manifests[@]} != 1)); then
+    printf 'Expected one role manifest for %s, found %d\n' \
+        "$IMAGE_ID" "${#role_manifests[@]}" >&2
+    exit 1
+fi
+
+role_manifest=${role_manifests[0]}
+cp --reflink=auto -- \
+    "$base_manifest" \
+    "${role_manifest%.manifest}.base.manifest"
+
 # The Python package path follows the builder's Python version. Resolve it from
 # the active mkosi installation instead of embedding a versioned filesystem path.
 mkosi_obs_postoutput="$('/usr/bin/python3' -c '
