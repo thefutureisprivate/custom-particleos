@@ -243,24 +243,9 @@ pcrproduct_dropin=mkosi.extra/usr/lib/systemd/system/systemd-pcrproduct.service.
 pcrlogin_dropin=mkosi.extra/usr/lib/systemd/system/systemd-pcrlogin@.service.d/40-particleos-nvpcr.conf
 require_fixed "ConditionPathExists=/run/systemd/nvpcr/hardware.auth" "$pcrproduct_dropin"
 require_fixed "ConditionPathExists=/run/systemd/nvpcr/login.auth" "$pcrlogin_dropin"
-selinux_relabel_unit=mkosi.extra/usr/lib/systemd/system/particleos-selinux-runtime-relabel.service
-selinux_relabel_tmpfiles=mkosi.extra/usr/lib/tmpfiles.d/particleos-selinux-runtime.conf
-selinux_udev_service_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd.service.d/10-selinux-runtime-relabel.conf
-selinux_udev_kernel_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-selinux-runtime-relabel.conf
-selinux_udev_varlink_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd-varlink.socket.d/10-selinux-runtime-relabel.conf
-require_fixed "DefaultDependencies=no" "$selinux_relabel_unit"
-require_fixed "ConditionSecurity=selinux" "$selinux_relabel_unit"
-require_fixed "ExecStart=/usr/bin/systemd-tmpfiles --create --prefix=/dev --prefix=/run/udev" "$selinux_relabel_unit"
-require_fixed "RemainAfterExit=yes" "$selinux_relabel_unit"
-require_fixed "Before=systemd-udevd.service systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selinux_relabel_unit"
-require_fixed "Z /dev - - - -" "$selinux_relabel_tmpfiles"
-require_fixed "Z /run/udev - - - -" "$selinux_relabel_tmpfiles"
-for selinux_udev_dropin in "$selinux_udev_service_dropin" "$selinux_udev_kernel_dropin" "$selinux_udev_varlink_dropin"; do
-    require_fixed "Requires=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
-    require_fixed "After=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
-done
-require_fixed "systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selinux_udev_service_dropin"
-require_fixed "IgnoreOnIsolate=no" "$selinux_udev_kernel_dropin"
+if rg -n 'particleos-selinux-runtime-relabel|particleos-selinux-runtime.conf' mkosi.extra; then
+    fail "systemd already relabels /dev and /run after loading the host SELinux policy"
+fi
 initrd_udev_kernel_dropin=mkosi.images/initrd/mkosi.extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-particleos-switch-root.conf
 initrd_udev_service_dropin=mkosi.images/initrd/mkosi.extra/usr/lib/systemd/system/systemd-udevd.service.d/10-particleos-switch-root.conf
 require_fixed "IgnoreOnIsolate=no" "$initrd_udev_kernel_dropin"
