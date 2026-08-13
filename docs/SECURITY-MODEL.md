@@ -161,6 +161,17 @@ deliberate switch-root stop. This clears the queued-event AF_NETLINK storage
 descriptor before SELinux activates; the main manager then coldplugs devices
 through newly created, policy-labeled sockets.
 
+The authenticated `/usr` mount is also `nosuid`. SELinux therefore requires a
+separate `process2:nosuid_transition` permission before a program on `/usr` may
+enter its daemon domain. Fedora grants this to some systemd services but not to
+udev or the system D-Bus broker. ParticleOS grants only the two missing
+`init_t` transitions, to `udev_t` and `system_dbusd_t`; it does not grant the
+related `nnp_transition` permission or any runtime-file access to `init_t`.
+Fedora also labels systemd's udev compatibility launcher symlink `lib_t`
+instead of `udev_exec_t`. The host unit therefore executes its correctly
+labelled `/usr/bin/udevadm` target directly while retaining the
+`systemd-udevd` invocation name.
+
 OBS forces mkosi to produce an aggregate checksum before attaching the final
 Secure Boot and verity signatures. A post-output hook removes exactly that
 stale aggregate before publication. Every published final artifact is instead

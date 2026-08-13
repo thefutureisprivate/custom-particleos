@@ -68,6 +68,7 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_obscure_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_packet_radio_sockets.cil \
+    /usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil \
     /usr/lib/particleos/selinux/particleos_homed_login.cil
 restore_preload
 trap - EXIT

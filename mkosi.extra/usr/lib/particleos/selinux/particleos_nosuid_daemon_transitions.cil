@@ -1,0 +1,10 @@
+; SPDX-License-Identifier: LGPL-2.1-or-later
+
+; ParticleOS mounts the authenticated /usr filesystem nosuid. Fedora already
+; permits systemd-resolved to enter its confined domain from such a mount, but
+; does not grant the equivalent process2 permission to udev or the system bus.
+; Without these narrow grants both daemons remain in init_t and cannot manage
+; their correctly labelled runtime state.
+(block particleos_nosuid_daemon_transitions
+  (allow .init_t .udev_t (process2 (nosuid_transition)))
+  (allow .init_t .system_dbusd_t (process2 (nosuid_transition))))

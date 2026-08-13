@@ -254,6 +254,11 @@ reject_fixed "After=" "$initrd_udev_kernel_dropin"
 require_fixed "FileDescriptorStorePreserve=restart" "$initrd_udev_service_dropin"
 reject_fixed "FileDescriptorStorePreserve=yes" "$initrd_udev_service_dropin"
 
+host_udev_service_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd.service.d/40-particleos-selinux.conf
+require_fixed "ExecStart=" "$host_udev_service_dropin"
+require_fixed "ExecStart=@/usr/bin/udevadm systemd-udevd" "$host_udev_service_dropin"
+reject_fixed "SELinuxContext=" "$host_udev_service_dropin"
+
 if rg -n '^SignExpectedPcr=(yes|true|1)$' "$role_policy" mkosi.images/*/emergency-uki.conf; then
     fail "expected-PCR signing is incompatible with the OBS RSA-4096 project key"
 fi
@@ -529,6 +534,8 @@ require_fixed "trap restore_preload EXIT" mkosi.scripts/particleos.postinst.chro
 require_fixed "restore_preload" mkosi.scripts/particleos.postinst.chroot
 require_fixed "semodule -X 300 -i" mkosi.scripts/particleos.postinst.chroot
 require_fixed "/usr/lib/particleos/selinux/secureblue_harden_userns.cil" mkosi.scripts/particleos.postinst.chroot
+require_fixed "/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil" \
+    mkosi.scripts/particleos.postinst.chroot
 require_fixed "(deny userns_restricted_domain self (user_namespace (create))))" \
     mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
 require_fixed "(.init_t .kernel_t .systemd_homework_t .systemd_importd_t))" \
@@ -610,6 +617,10 @@ for socket_policy in \
         fail "missing SELinux socket policy: $socket_policy"
 done
 require_fixed "/usr/lib/particleos/selinux/particleos_homed_login.cil" mkosi.scripts/particleos.postinst.chroot
+nosuid_transition_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
+require_fixed ".init_t .udev_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".init_t .system_dbusd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+reject_fixed "nnp_transition" "$nosuid_transition_policy"
 require_fixed ".local_login_t .systemd_userdbd_runtime_t" \
     mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 require_fixed ".chkpwd_t .systemd_userdbd_runtime_t" \
