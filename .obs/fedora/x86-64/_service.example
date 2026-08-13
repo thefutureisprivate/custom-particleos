@@ -4,7 +4,7 @@
     <param name="scm">git</param>
     <param name="url">https://github.com/thefutureisprivate/custom-particleos.git</param>
     <param name="revision">REPLACE_WITH_REVIEWED_COMMIT</param>
-    <param name="extract">.obs/fedora/x86-64/webserver/mkosi.conf</param>
+    <param name="extract">.obs/fedora/x86-64/mkosi.conf</param>
     <param name="without-version">1</param>
   </service>
 </services>

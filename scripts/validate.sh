@@ -41,7 +41,6 @@ if find . -path ./.git -prune -o -type f \( -iname 'Containerfile*' -o -iname 'D
 fi
 
 roles=(webserver mailserver dnsserver)
-obs_roles=(webserver)
 declare -A role_image_ids=(
     [webserver]=ParticleOS-Webserver
     [mailserver]=ParticleOS-Mailserver
@@ -50,84 +49,167 @@ declare -A role_image_ids=(
 declare -A role_packages=(
     [webserver]="certbot nginx-core"
 )
-obs_recipes=(.obs/fedora/x86-64/*/mkosi.conf)
+base_config=mkosi.images/base/mkosi.conf
+initrd_config=mkosi.images/initrd/mkosi.conf
+role_policy=mkosi.role.conf
+obs_config=mkosi.obs.conf
+obs_recipe=.obs/fedora/x86-64/mkosi.conf
+service_template=.obs/fedora/x86-64/_service.example
+postinst=mkosi.scripts/particleos.postinst.chroot
+finalize=mkosi.scripts/particleos.finalize
+obs_recipes=("$obs_recipe")
 
-for role in "${roles[@]}"; do
-    profile_config="mkosi.profiles/$role/mkosi.conf"
-    emergency_uki="mkosi.profiles/$role/emergency-uki.conf"
-    require_fixed "ImageId=${role_image_ids[$role]}" "$profile_config"
-    require_fixed "Hostname=particle-" "$profile_config"
-    require_fixed "UnifiedKernelImageProfiles=%D/$emergency_uki" "$profile_config"
-    require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$profile_config"
-    require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$emergency_uki"
-    require_fixed "SignExpectedPcr=no" "$emergency_uki"
-done
-
-
-for dormant_role in mailserver dnsserver; do
-    profile_config="mkosi.profiles/$dormant_role/mkosi.conf"
-    if [[ -n "$(extract_stanza Packages "$profile_config")" ]]; then
-        fail "$profile_config must not select packages while the role is dormant"
-    fi
-    if [[ -e ".obs/fedora/x86-64/$dormant_role" ]]; then
-        fail "$dormant_role must not have an OBS build recipe"
-    fi
-    reject_fixed "package: particleos-$dormant_role" .obs/workflows.example.yml
-done
-require_fixed "project-provided Stalwart package" mkosi.profiles/mailserver/mkosi.conf
-require_fixed "Empty placeholder" mkosi.profiles/dnsserver/mkosi.conf
-if rg -n '^[[:space:]]*(dovecot|dovecot-pigeonhole|postfix|postfix-pcre|dnsdist|unbound)[[:space:]]*$' \
-        mkosi.conf mkosi.conf.d mkosi.profiles .obs/fedora/x86-64; then
-    fail "dormant mail and DNS daemon packages must not be selected"
-fi
-# Profiles are explicit. Building without exactly one role must fail rather
-# than falling back to a mixed or stale compatibility image.
+require_fixed "Dependencies=webserver" mkosi.conf
+reject_fixed "Dependencies=mailserver" mkosi.conf
+reject_fixed "Dependencies=dnsserver" mkosi.conf
+require_fixed "Format=none" mkosi.conf
+require_fixed "Overlay=yes" mkosi.conf
 if grep -q '^Profiles=' mkosi.conf; then
-    fail "mkosi.conf must not select an implicit role profile"
+    fail "mkosi.conf must not select a profile"
 fi
 require_fixed "Distribution=fedora" mkosi.conf
 require_fixed "Release=44" mkosi.conf
 require_fixed "Architecture=x86-64" mkosi.conf
 require_fixed "Mirror=https://dl.fedoraproject.org/pub/fedora" mkosi.conf
 require_fixed "ToolsTreeMirror=https://download.opensuse.org" mkosi.conf
-require_fixed "SELinuxRelabel=yes" mkosi.conf
-require_fixed "WithDocs=no" mkosi.conf
-require_fixed "WithRecommends=no" mkosi.conf
-require_fixed "ExtraTrees=mkosi.resources:/usr/lib/particleos/sysupdate-key-source" mkosi.conf
-require_fixed "SecureBoot=yes" mkosi.conf
-require_fixed "SignExpectedPcr=no" mkosi.conf
-require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
-require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
-require_fixed "CopyFiles=/usr/share/factory/root:/" mkosi.extra/usr/lib/repart.d/40-root.conf
-reject_fixed "MakeDirectories=" mkosi.extra/usr/lib/repart.d/40-root.conf
-reject_fixed "MakeSymlinks=" mkosi.extra/usr/lib/repart.d/40-root.conf
-require_fixed "root_skeleton=\"\$BUILDROOT/usr/share/factory/root\"" mkosi.finalize
-require_fixed 'ln -sfn usr/bin "$root_skeleton/bin"' mkosi.finalize
-require_fixed 'ln -sfn usr/lib "$root_skeleton/lib"' mkosi.finalize
-require_fixed 'ln -sfn usr/lib64 "$root_skeleton/lib64"' mkosi.finalize
-require_fixed 'ln -sfn usr/sbin "$root_skeleton/sbin"' mkosi.finalize
-require_fixed "ln -sfn /usr/share/factory/etc/selinux" mkosi.finalize
-require_fixed "chroot \"\$BUILDROOT\" /usr/sbin/setfiles -F" mkosi.finalize
-require_fixed "-r /usr/share/factory/root" mkosi.finalize
-require_fixed "chroot \"\$BUILDROOT\" /usr/bin/chcon -h system_u:object_r:etc_t:s0" mkosi.finalize
-require_fixed "L? /etc/protocols" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
-initrd_config=mkosi.images/initrd/mkosi.conf
-if extract_stanza "Packages" "$initrd_config" | grep -Fxq selinux-policy-targeted; then
+
+require_fixed "Format=directory" "$base_config"
+require_fixed "Output=base" "$base_config"
+require_fixed "ImageId=ParticleOS-Base" "$base_config"
+require_fixed "CleanPackageMetadata=no" "$base_config"
+require_fixed "Bootable=no" "$base_config"
+require_fixed "SELinuxRelabel=no" "$base_config"
+require_fixed "Profiles=" "$base_config"
+for forbidden_base_setting in \
+        "BaseTrees=" \
+        "PostInstallationScripts=%D/mkosi.scripts/particleos.postinst.chroot" \
+        "FinalizeScripts=%D/mkosi.scripts/particleos.finalize" \
+        "Initrds=%O/initrd"; do
+    reject_fixed "$forbidden_base_setting" "$base_config"
+done
+
+for role in "${roles[@]}"; do
+    image_config="mkosi.images/$role/mkosi.conf"
+    emergency_uki="mkosi.images/$role/emergency-uki.conf"
+    require_fixed "Include=%D/mkosi.role.conf" "$image_config"
+    require_fixed "Dependencies=base,initrd" "$image_config"
+    require_fixed "BaseTrees=%O/base" "$image_config"
+    require_fixed "CleanPackageMetadata=yes" "$image_config"
+    require_fixed "Initrds=%O/initrd" "$image_config"
+    require_fixed "ImageId=${role_image_ids[$role]}" "$image_config"
+    require_fixed "Hostname=particle-" "$image_config"
+    require_fixed "UnifiedKernelImageProfiles=%D/$emergency_uki" "$image_config"
+    require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$image_config"
+    require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$emergency_uki"
+    require_fixed "SignExpectedPcr=no" "$emergency_uki"
+done
+
+for dormant_role in mailserver dnsserver; do
+    image_config="mkosi.images/$dormant_role/mkosi.conf"
+    if [[ -n "$(extract_stanza Packages "$image_config")" ]]; then
+        fail "$image_config must not select packages while the role is dormant"
+    fi
+done
+require_fixed "project-provided Stalwart package" mkosi.images/mailserver/mkosi.conf
+require_fixed "Empty placeholder" mkosi.images/dnsserver/mkosi.conf
+if rg -n '^[[:space:]]*(dovecot|dovecot-pigeonhole|postfix|postfix-pcre|dnsdist|unbound)[[:space:]]*$' \
+        mkosi.conf mkosi.role.conf mkosi.images mkosi.profiles .obs/fedora/x86-64; then
+    fail "dormant mail and DNS daemon packages must not be selected"
+fi
+
+require_fixed "Format=disk" "$role_policy"
+require_fixed "SplitArtifacts=uki,partitions,roothash,os-release,repart-definitions" "$role_policy"
+reject_fixed "SplitArtifacts=pcrs" "$role_policy"
+require_fixed "RepartDirectories=%D/mkosi.repart" "$role_policy"
+require_fixed "Bootable=yes" "$role_policy"
+require_fixed "CleanScripts=%D/mkosi.scripts/particleos.clean" "$role_policy"
+require_fixed "SELinuxRelabel=yes" "$role_policy"
+require_fixed "WithDocs=no" "$role_policy"
+require_fixed "WithRecommends=no" "$role_policy"
+require_fixed "ExtraTrees=%D/mkosi.extra" "$role_policy"
+require_fixed "%D/mkosi.resources:/usr/lib/particleos/sysupdate-key-source" "$role_policy"
+require_fixed "SecureBoot=yes" "$role_policy"
+require_fixed "SignExpectedPcr=no" "$role_policy"
+require_fixed "PostInstallationScripts=%D/$postinst" "$role_policy"
+require_fixed "FinalizeScripts=%D/$finalize" "$role_policy"
+require_fixed "PostOutputScripts=%D/mkosi.scripts/remove-first-pass-checksum" "$role_policy"
+
+require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$obs_config"
+require_fixed "Include=mkosi-obs" "$obs_config"
+require_fixed "ExtraTrees=%D/mkosi.obs.extra" "$obs_config"
+require_fixed "Include=%D/mkosi.obs.conf" "$role_policy"
+
+require_fixed "# needssslcertforbuild" "$obs_recipe"
+require_fixed "Dependencies=webserver" "$obs_recipe"
+xmllint --noout "$service_template"
+require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" "$service_template"
+require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$service_template"
+require_fixed ".obs/fedora/x86-64/mkosi.conf" "$service_template"
+require_fixed "package: custom-particleos" .obs/workflows.example.yml
+reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
+
+if ! diff -u \
+        <({
+            extract_stanza Packages "$base_config"
+            extract_stanza VolatilePackages "$base_config"
+            extract_stanza Packages "$initrd_config"
+            extract_stanza VolatilePackages "$initrd_config"
+            extract_stanza Packages mkosi.images/webserver/mkosi.conf
+        } | sed '/^$/d' | sort -u) \
+        <(extract_stanza BuildPackages "$obs_recipe" | sort -u); then
+    fail "$obs_recipe BuildPackages= does not equal the selected graph package closure"
+fi
+
+for required_role_package in ${role_packages[webserver]}; do
+    require_fixed "$required_role_package" mkosi.images/webserver/mkosi.conf
+    require_fixed "$required_role_package" "$obs_recipe"
+done
+for recipe in "$base_config" mkosi.images/webserver/mkosi.conf "$obs_recipe"; do
+    if grep -Eq '^[[:space:]]*sudo[[:space:]]*$' "$recipe"; then
+        fail "$recipe installs sudo; ParticleOS uses run0"
+    fi
+    if grep -Eq '^[[:space:]]*nginx[[:space:]]*$' "$recipe"; then
+        fail "$recipe installs the nginx metapackage instead of nginx-core"
+    fi
+done
+
+composed_packages=$(
+    extract_stanza Packages "$base_config"
+    extract_stanza VolatilePackages "$base_config"
+)
+for removed_package in hostname iproute iputils p11-kit passwd systemd-ukify; do
+    if grep -Fxq "$removed_package" <<<"$composed_packages"; then
+        fail "$removed_package is forbidden in the target package set"
+    fi
+done
+for required_dependency in authselect findutils gnupg2 libcurl-minimal policycoreutils sed systemd-container; do
+    if ! grep -Fxq "$required_dependency" <<<"$composed_packages"; then
+        fail "$required_dependency is missing from the shared base package set"
+    fi
+done
+for required_base_package in hardened_malloc no_rlimit_as polkit authselect; do
+    require_fixed "$required_base_package" "$base_config"
+    require_fixed "$required_base_package" "$obs_recipe"
+done
+
+if extract_stanza Packages "$initrd_config" | grep -Fxq selinux-policy-targeted; then
     fail "$initrd_config must not load enforcing policy from an unlabeled cpio initrd"
 fi
-initrd_packages=$(extract_stanza "Packages" "$initrd_config")
+initrd_packages=$(extract_stanza Packages "$initrd_config")
 for required_initrd_package in ipe-policy libfdisk; do
-    if ! grep -Fxq "$required_initrd_package" <<<"$initrd_packages"; then
+    grep -Fxq "$required_initrd_package" <<<"$initrd_packages" ||
         fail "$required_initrd_package is missing from the custom initrd"
-    fi
 done
-initrd_volatile_packages=$(extract_stanza "VolatilePackages" "$initrd_config")
+initrd_volatile_packages=$(extract_stanza VolatilePackages "$initrd_config")
 for required_initrd_volatile_package in systemd udev; do
-    if ! grep -Fxq "$required_initrd_volatile_package" <<<"$initrd_volatile_packages"; then
+    grep -Fxq "$required_initrd_volatile_package" <<<"$initrd_volatile_packages" ||
         fail "$required_initrd_volatile_package must remain volatile in the custom initrd"
-    fi
 done
 require_fixed "/usr/lib/nvpcr" "$initrd_config"
+require_fixed "Include=mkosi-initrd" "$initrd_config"
+require_fixed "Output=initrd" "$initrd_config"
+reject_fixed "InitrdPackages=" mkosi.conf
+
 pcrproduct_dropin=mkosi.extra/usr/lib/systemd/system/systemd-pcrproduct.service.d/40-particleos-nvpcr.conf
 pcrlogin_dropin=mkosi.extra/usr/lib/systemd/system/systemd-pcrlogin@.service.d/40-particleos-nvpcr.conf
 require_fixed "ConditionPathExists=/run/systemd/nvpcr/hardware.auth" "$pcrproduct_dropin"
@@ -149,38 +231,20 @@ require_fixed "systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selin
 require_fixed "IgnoreOnIsolate=no" "$selinux_udev_kernel_dropin"
 initrd_udev_kernel_dropin=mkosi.images/initrd/mkosi.extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-particleos-switch-root.conf
 initrd_udev_service_dropin=mkosi.images/initrd/mkosi.extra/usr/lib/systemd/system/systemd-udevd.service.d/10-particleos-switch-root.conf
-require_fixed "Include=mkosi-initrd" "$initrd_config"
-require_fixed "Output=initrd" "$initrd_config"
-for main_config in mkosi.conf .obs/fedora/x86-64/*/mkosi.conf; do
-    require_fixed "Dependencies=initrd" "$main_config"
-    require_fixed "Initrds=%O/initrd" "$main_config"
-done
-reject_fixed "InitrdPackages=" mkosi.conf
 require_fixed "IgnoreOnIsolate=no" "$initrd_udev_kernel_dropin"
 reject_fixed "Requires=" "$initrd_udev_kernel_dropin"
 reject_fixed "After=" "$initrd_udev_kernel_dropin"
 require_fixed "FileDescriptorStorePreserve=restart" "$initrd_udev_service_dropin"
 reject_fixed "FileDescriptorStorePreserve=yes" "$initrd_udev_service_dropin"
-for split_config in mkosi.conf .obs/fedora/x86-64/*/mkosi.conf; do
-    if ! awk '
-            $0 == "SplitArtifacts=" { reset = 1; next }
-            reset && $0 == "SplitArtifacts=uki,partitions,roothash,os-release,repart-definitions" { found = 1 }
-            END { exit !found }
-        ' "$split_config"; then
-        fail "$split_config must preserve OBS verity inputs while excluding PCR artifacts"
-    fi
-    if grep -Eq '^SplitArtifacts=(.*,)?pcrs(,|$)' "$split_config"; then
-        fail "$split_config embeds the OBS RSA-4096 key as an unusable TPM policy key"
-    fi
-done
-if rg -n '^SignExpectedPcr=(yes|true|1)$' mkosi.conf mkosi.profiles/*/emergency-uki.conf; then
+
+if rg -n '^SignExpectedPcr=(yes|true|1)$' "$role_policy" mkosi.images/*/emergency-uki.conf; then
     fail "expected-PCR signing is incompatible with the OBS RSA-4096 project key"
 fi
 if find mkosi.uefi.db mkosi.uefi.KEK -type f -print 2>/dev/null | grep -q .; then
     fail "only the mkosi-obs project certificate may be enrolled in UEFI"
 fi
-require_fixed "ipe.enforce=1" mkosi.conf
-require_fixed "lockdown=confidentiality" mkosi.conf
+require_fixed "ipe.enforce=1" "$role_policy"
+require_fixed "lockdown=confidentiality" "$role_policy"
 for kernel_argument in \
         audit_backlog_limit=8192 \
         rootflags=nosuid,nodev \
@@ -191,80 +255,32 @@ for kernel_argument in \
         module.sig_enforce=1 \
         rd.shell=0 \
         rd.emergency=halt; do
-    require_fixed "$kernel_argument" mkosi.conf
+    require_fixed "$kernel_argument" "$role_policy"
     for role in "${roles[@]}"; do
-        require_fixed "$kernel_argument" "mkosi.profiles/$role/emergency-uki.conf"
+        require_fixed "$kernel_argument" "mkosi.images/$role/emergency-uki.conf"
     done
 done
-if rg -n "preempt=none" mkosi.conf mkosi.profiles/*/emergency-uki.conf; then
+if rg -n "preempt=none" "$role_policy" mkosi.images/*/emergency-uki.conf; then
     fail "the current Fedora kernel rejects preempt=none"
 fi
 
+require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
+require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
+require_fixed "CopyFiles=/usr/share/factory/root:/" mkosi.extra/usr/lib/repart.d/40-root.conf
+reject_fixed "MakeDirectories=" mkosi.extra/usr/lib/repart.d/40-root.conf
+reject_fixed "MakeSymlinks=" mkosi.extra/usr/lib/repart.d/40-root.conf
+require_fixed "root_skeleton=\"\$BUILDROOT/usr/share/factory/root\"" "$finalize"
+require_fixed 'ln -sfn usr/bin "$root_skeleton/bin"' "$finalize"
+require_fixed 'ln -sfn usr/lib "$root_skeleton/lib"' "$finalize"
+require_fixed 'ln -sfn usr/lib64 "$root_skeleton/lib64"' "$finalize"
+require_fixed 'ln -sfn usr/sbin "$root_skeleton/sbin"' "$finalize"
+require_fixed "ln -sfn /usr/share/factory/etc/selinux" "$finalize"
+require_fixed "chroot \"\$BUILDROOT\" /usr/sbin/setfiles -F" "$finalize"
+require_fixed "-r /usr/share/factory/root" "$finalize"
+require_fixed "chroot \"\$BUILDROOT\" /usr/bin/chcon -h system_u:object_r:etc_t:s0" "$finalize"
+require_fixed "L? /etc/protocols" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 
-for role in "${obs_roles[@]}"; do
-    obs_recipe=".obs/fedora/x86-64/$role/mkosi.conf"
-    service_template=".obs/fedora/x86-64/$role/_service.example"
-    profile_config="mkosi.profiles/$role/mkosi.conf"
-
-    require_fixed "# needssslcertforbuild" "$obs_recipe"
-    require_fixed "Include=mkosi-obs" "$obs_recipe"
-    require_fixed "Release=44" "$obs_recipe"
-    require_fixed "Mirror=https://dl.fedoraproject.org/pub/fedora" "$obs_recipe"
-    require_fixed "ToolsTreeMirror=https://download.opensuse.org" "$obs_recipe"
-    require_fixed "Profiles=$role,obs-sysupdate" "$obs_recipe"
-    require_fixed "WithRecommends=no" "$obs_recipe"
-    require_fixed "ExtraTrees=mkosi.resources:/usr/lib/particleos/sysupdate-key-source" "$obs_recipe"
-
-    xmllint --noout "$service_template"
-    require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" "$service_template"
-    require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$service_template"
-    require_fixed ".obs/fedora/x86-64/$role/mkosi.conf" "$service_template"
-    require_fixed "package: custom-particleos-$role" .obs/workflows.example.yml
-
-    if ! diff -u \
-            <({
-                extract_stanza Packages mkosi.conf
-                extract_stanza Packages mkosi.conf.d/fedora/mkosi.conf
-                extract_stanza Packages "$profile_config"
-            } | sort -u) \
-            <(extract_stanza Packages "$obs_recipe" | sort -u); then
-        fail "$obs_recipe Packages= does not equal the shared, Fedora, and role package union"
-    fi
-
-    if ! diff -u \
-            <(extract_stanza RemoveFiles mkosi.conf | sort -u) \
-            <(extract_stanza RemoveFiles "$obs_recipe" | sort -u); then
-        fail "$obs_recipe RemoveFiles= does not equal the shared image pruning set"
-    fi
-
-    if ! diff -u \
-            <(extract_stanza Packages "$initrd_config" | sort -u) \
-            <(extract_stanza InitrdPackages "$obs_recipe" | sort -u); then
-        fail "$obs_recipe InitrdPackages= does not expose the custom initrd package set"
-    fi
-
-    for required_role_package in ${role_packages[$role]}; do
-        require_fixed "$required_role_package" "$profile_config"
-        require_fixed "$required_role_package" "$obs_recipe"
-    done
-
-    for recipe in mkosi.conf "$profile_config" "$obs_recipe"; do
-        if grep -Eq '^[[:space:]]*sudo[[:space:]]*$' "$recipe"; then
-            fail "$recipe installs sudo; ParticleOS uses run0"
-        fi
-        if grep -Eq '^[[:space:]]*nginx[[:space:]]*$' "$recipe"; then
-            fail "$recipe installs the nginx metapackage instead of nginx-core"
-        fi
-    done
-
-    require_fixed "hardened_malloc" "$obs_recipe"
-    require_fixed "no_rlimit_as" "$obs_recipe"
-    require_fixed "polkit" "$obs_recipe"
-    require_fixed "authselect" "$obs_recipe"
-    require_fixed "/usr/bin/pam_timestamp_check" "$obs_recipe"
-done
-
-checksum_hook=mkosi.postoutput.d/90-remove-first-pass-checksum
+checksum_hook=mkosi.scripts/remove-first-pass-checksum
 test -x "$checksum_hook" || fail "$checksum_hook must be executable"
 require_fixed "Refusing unsafe checksum path" "$checksum_hook"
 require_fixed "rm -f --" "$checksum_hook"
@@ -278,40 +294,17 @@ if rg -n '<path project="Fedora:44" repository="standard"/>' .obs/project-meta.e
     fail "OBS must use Fedora 44 updates rather than the frozen release repository"
 fi
 
-require_fixed "authselect" mkosi.conf.d/fedora/mkosi.conf
-require_fixed "/usr/bin/pam_timestamp_check" mkosi.conf
-composed_packages=$(
-    extract_stanza Packages mkosi.conf
-    extract_stanza Packages mkosi.conf.d/fedora/mkosi.conf
-)
-
-for removed_package in hostname iproute iputils p11-kit passwd systemd-ukify; do
-    if grep -Fxq "$removed_package" <<<"$composed_packages"; then
-        fail "$removed_package is forbidden in the target package set"
-    fi
+for removed_runtime_path in /usr/bin/pam_timestamp_check /usr/bin/systemd-nspawn /usr/bin/systemd-vmspawn /usr/lib/systemd/systemd-importd /usr/bin/dirmngr /usr/bin/gpg-agent /usr/libexec/keyboxd /usr/lib/systemd/user/gpg-agent.socket; do
+    require_fixed "$removed_runtime_path" "$role_policy"
 done
-
-for required_dependency in authselect findutils gnupg2 libcurl-minimal policycoreutils sed systemd-container; do
-    if ! grep -Fxq "$required_dependency" <<<"$composed_packages"; then
-        fail "$required_dependency is missing from the composed target package set"
-    fi
-done
-
-require_fixed "/usr/bin/systemd-nspawn" mkosi.conf
-require_fixed "/usr/bin/systemd-vmspawn" mkosi.conf
-require_fixed "/usr/lib/systemd/systemd-importd" mkosi.conf
-require_fixed "/usr/bin/dirmngr" mkosi.conf
-require_fixed "/usr/bin/gpg-agent" mkosi.conf
-require_fixed "/usr/libexec/keyboxd" mkosi.conf
-require_fixed "/usr/lib/systemd/user/gpg-agent.socket" mkosi.conf
-if rg -n '^[[:space:]]*/usr/lib/systemd/systemd-pull[[:space:]]*$' mkosi.conf; then
+if rg -n '^[[:space:]]*/usr/lib/systemd/systemd-pull[[:space:]]*$' "$role_policy"; then
     fail "systemd-pull must be retained for systemd-sysupdate"
 fi
 require_fixed "/usr/lib/particleos/sysupdate-key-source/particleos-obs-pubkey.gpg" \
-    mkosi.postinst.chroot
-require_fixed "/usr/lib/systemd/import-pubring.pgp" mkosi.postinst.chroot
-require_fixed "gpg --batch --yes --dearmor" mkosi.postinst.chroot
-require_fixed "chmod 0644 /usr/lib/systemd/import-pubring.pgp" mkosi.postinst.chroot
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed "/usr/lib/systemd/import-pubring.pgp" mkosi.scripts/particleos.postinst.chroot
+require_fixed "gpg --batch --yes --dearmor" mkosi.scripts/particleos.postinst.chroot
+require_fixed "chmod 0644 /usr/lib/systemd/import-pubring.pgp" mkosi.scripts/particleos.postinst.chroot
 for disabled_container_unit in \
         machines.target \
         systemd-importd.socket \
@@ -334,15 +327,15 @@ printf '%s  %s\n' \
     mkosi.resources/particleos-obs-pubkey.gpg | sha256sum --check --status - ||
     fail "the pinned ParticleOS OBS public key changed"
 
-if rg -n 'amd-ucode-firmware|microcode_ctl' mkosi.conf mkosi.conf.d mkosi.profiles "${obs_recipes[@]}"; then
+if rg -n 'amd-ucode-firmware|microcode_ctl' mkosi.conf mkosi.role.conf mkosi.images mkosi.profiles "${obs_recipes[@]}"; then
     fail "guest microcode packages are forbidden for the VPS image"
 fi
 
 require_fixed "--member-of=wheel,systemd-journal"     mkosi.extra/usr/lib/systemd/system/systemd-homed-firstboot.service.d/40-particleos-admin.conf
 require_fixed "DefaultStorage=directory" \
     mkosi.extra/usr/lib/systemd/homed.conf.d/40-particleos.conf
-require_fixed "pam_systemd_home\\.so" mkosi.postinst.chroot
-require_fixed "pam_unix\\.so/i auth" mkosi.postinst.chroot
+require_fixed "pam_systemd_home\\.so" mkosi.scripts/particleos.postinst.chroot
+require_fixed "pam_unix\\.so/i auth" mkosi.scripts/particleos.postinst.chroot
 require_fixed "PermitRootLogin no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PasswordAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "HostKey /etc/ssh/ssh_host_ed25519_key"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
@@ -368,9 +361,9 @@ require_fixed "ListenStream=[::]:22" "$sshd_socket_dropin"
 reject_fixed "enable sshd-keygen.target" \
     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/sshd-keygen.target"' \
-    mkosi.finalize
-require_fixed "system_u:object_r:bootloader_exec_t:s0" mkosi.finalize
-require_fixed "/usr/lib/systemd/systemd-bless-boot" mkosi.finalize
+    mkosi.scripts/particleos.finalize
+require_fixed "system_u:object_r:bootloader_exec_t:s0" mkosi.scripts/particleos.finalize
+require_fixed "/usr/lib/systemd/systemd-bless-boot" mkosi.scripts/particleos.finalize
 sshd_keygen_dropin=mkosi.extra/usr/lib/systemd/system/sshd-keygen@.service.d/40-particleos-hardening.conf
 require_fixed "CapabilityBoundingSet=" "$sshd_keygen_dropin"
 require_fixed "ExecStartPost=/usr/bin/test -s /etc/ssh/ssh_host_ed25519_key" \
@@ -383,7 +376,7 @@ require_fixed "SystemCallFilter=@system-service" "$sshd_keygen_dropin"
 if [[ -e mkosi.extra/usr/lib/systemd/system/sshd.service.d/40-particleos-hardening.conf ]]; then
     fail "the disabled monolithic sshd.service must not carry the socket-template hardening"
 fi
-web_extra=mkosi.profiles/webserver/mkosi.extra
+web_extra=mkosi.images/webserver/mkosi.extra
 web_preset="$web_extra/usr/lib/systemd/system-preset/20-particleos-webserver.preset"
 web_tmpfiles="$web_extra/usr/lib/tmpfiles.d/particleos-webserver.conf"
 base_firewall=mkosi.extra/usr/lib/particleos/nftables.conf
@@ -448,7 +441,7 @@ require_fixed "/dev/tcp/127.0.0.1/80" "$web_health_check"
 require_fixed "HTTP/*" "$web_health_check"
 
 for closed_role in mailserver dnsserver; do
-    closed_firewall="mkosi.profiles/$closed_role/mkosi.extra/usr/lib/particleos/nftables-role.nft"
+    closed_firewall="mkosi.images/$closed_role/mkosi.extra/usr/lib/particleos/nftables-role.nft"
     require_fixed "all role ingress and egress remains closed." "$closed_firewall"
     reject_fixed " accept" "$closed_firewall"
 done
@@ -472,9 +465,9 @@ require_fixed "LimitNOFILE=32768" $web_extra/usr/lib/systemd/system/nginx.servic
 if rg -n 'worker_rlimit_nofile' $web_extra/usr/lib/particleos/nginx; then
     fail "nginx file-descriptor limits must be set by systemd before capabilities are dropped"
 fi
-require_fixed "install --directory --mode=0700 /run/nginx" mkosi.postinst.chroot
-require_fixed "rm --force /run/nginx/nginx.pid" mkosi.postinst.chroot
-require_fixed "rmdir /run/nginx" mkosi.postinst.chroot
+require_fixed "install --directory --mode=0700 /run/nginx" mkosi.scripts/particleos.postinst.chroot
+require_fixed "rm --force /run/nginx/nginx.pid" mkosi.scripts/particleos.postinst.chroot
+require_fixed "rmdir /run/nginx" mkosi.scripts/particleos.postinst.chroot
 require_fixed "access_log syslog:server=unix:/run/systemd/journal/dev-log,facility=daemon,tag=nginx,nohostname main" \
     $web_extra/usr/lib/particleos/nginx/nginx.conf
 if rg -n 'access_log[[:space:]]+/dev/(stdout|stderr)' $web_extra/usr/lib/particleos/nginx; then
@@ -511,14 +504,14 @@ require_fixed "kernel.core_pattern = |/bin/false" mkosi.extra/usr/lib/sysctl.d/7
 require_fixed "kernel.oops_limit = 100" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.warn_limit = 100" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "kernel.printk = 3 3 3 3" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
-require_fixed "setsebool -P deny_ptrace=on" mkosi.postinst.chroot
-require_fixed "handle-unknown=deny" mkosi.postinst.chroot
-reject_fixed "container_allow_ptrace" mkosi.postinst.chroot
+require_fixed "setsebool -P deny_ptrace=on" mkosi.scripts/particleos.postinst.chroot
+require_fixed "handle-unknown=deny" mkosi.scripts/particleos.postinst.chroot
+reject_fixed "container_allow_ptrace" mkosi.scripts/particleos.postinst.chroot
 reject_fixed "vm.mmap_rnd_compat_bits" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
-require_fixed "trap restore_preload EXIT" mkosi.postinst.chroot
-require_fixed "restore_preload" mkosi.postinst.chroot
-require_fixed "semodule -X 300 -i" mkosi.postinst.chroot
-require_fixed "/usr/lib/particleos/selinux/secureblue_harden_userns.cil" mkosi.postinst.chroot
+require_fixed "trap restore_preload EXIT" mkosi.scripts/particleos.postinst.chroot
+require_fixed "restore_preload" mkosi.scripts/particleos.postinst.chroot
+require_fixed "semodule -X 300 -i" mkosi.scripts/particleos.postinst.chroot
+require_fixed "/usr/lib/particleos/selinux/secureblue_harden_userns.cil" mkosi.scripts/particleos.postinst.chroot
 require_fixed "(deny userns_restricted_domain self (user_namespace (create))))" \
     mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
 require_fixed "(.init_t .kernel_t .systemd_homework_t .systemd_importd_t))" \
@@ -531,37 +524,38 @@ require_fixed "DefaultLimitCORE=0" mkosi.extra/usr/lib/systemd/system.conf.d/40-
 require_fixed "DumpCore=no" mkosi.extra/usr/lib/systemd/user.conf.d/40-particleos-hardening.conf
 require_fixed "* hard core 0" mkosi.extra/usr/lib/security/limits.d/60-particleos-no-coredump.conf
 require_fixed "Storage=none" mkosi.extra/usr/lib/systemd/coredump.conf.d/40-particleos.conf
-require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"' mkosi.finalize
-require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"' mkosi.finalize
+require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"' mkosi.scripts/particleos.finalize
+require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"' mkosi.scripts/particleos.finalize
 require_fixed "disable authselect-apply-changes.service"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed "enable polkit-agent-helper.socket" \
     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
-require_fixed 'homectl --help | grep -F "adopt PATH" >/dev/null' mkosi.postinst.chroot
-require_fixed 'polkit-agent-helper.socket' mkosi.postinst.chroot
-require_fixed 'polkit-agent-helper@.service' mkosi.postinst.chroot
+require_fixed 'homectl --help | grep -F "adopt PATH" >/dev/null' mkosi.scripts/particleos.postinst.chroot
+require_fixed 'polkit-agent-helper.socket' mkosi.scripts/particleos.postinst.chroot
+require_fixed 'polkit-agent-helper@.service' mkosi.scripts/particleos.postinst.chroot
 for required_current_systemd_unit in \
         systemd-sysupdate-update.service \
         systemd-sysupdate-update.timer \
         systemd-sysupdate-reboot.service \
         systemd-sysupdate-reboot.timer; do
-    require_fixed "$required_current_systemd_unit" mkosi.postinst.chroot
+    require_fixed "$required_current_systemd_unit" mkosi.scripts/particleos.postinst.chroot
 done
 require_fixed 'HOME_URL="https://github.com/thefutureisprivate/custom-particleos/"' \
-    mkosi.postinst.chroot
+    mkosi.scripts/particleos.postinst.chroot
 old_repository_url='github.com/thefutureisprivate/'particleos-webserver
 if rg -n -F "$old_repository_url" \
-        README.md NOTICE docs mkosi.conf mkosi.conf.d mkosi.resources mkosi.profiles mkosi.postinst.chroot .obs; then
+        README.md NOTICE docs mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.resources mkosi.images mkosi.profiles "$postinst" .obs; then
     fail "the old GitHub repository name must not remain in project metadata"
 fi
 
-require_fixed 'grep -Fqx "IMAGE_ID=\"$IMAGE_ID\""' mkosi.finalize
-require_fixed 'find "$image_tree" -xdev -type f -perm /6000 -perm /0111' mkosi.finalize
-require_fixed '-exec chmod a-s -- {} +' mkosi.finalize
-require_fixed '-print -quit' mkosi.finalize
-require_fixed 'particleos_role_count != 1' mkosi.postinst.chroot
-require_fixed 'exactly one ParticleOS role profile is required' mkosi.postinst.chroot
-require_fixed 'webserver | mailserver | dnsserver' mkosi.postinst.chroot
-require_fixed 'set-ID executable remains after finalization' mkosi.finalize
+require_fixed 'grep -Fqx "IMAGE_ID=\"$IMAGE_ID\""' mkosi.scripts/particleos.finalize
+require_fixed 'find "$image_tree" -xdev -type f -perm /6000 -perm /0111' mkosi.scripts/particleos.finalize
+require_fixed '-exec chmod a-s -- {} +' mkosi.scripts/particleos.finalize
+require_fixed '-print -quit' mkosi.scripts/particleos.finalize
+reject_fixed 'PROFILES' "$postinst"
+for role_image_id in "${role_image_ids[@]}"; do
+    require_fixed "$role_image_id" "$postinst"
+done
+require_fixed 'set-ID executable remains after finalization' mkosi.scripts/particleos.finalize
 
 resolved_conf=mkosi.extra/usr/lib/systemd/resolved.conf.d/40-particleos-dns.conf
 require_fixed "DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com" "$resolved_conf"
@@ -586,11 +580,11 @@ for socket_policy in \
         secureblue_deny_ipsec_sockets.cil \
         secureblue_deny_obscure_sockets.cil \
         secureblue_deny_packet_radio_sockets.cil; do
-    require_fixed "/usr/lib/particleos/selinux/$socket_policy" mkosi.postinst.chroot
+    require_fixed "/usr/lib/particleos/selinux/$socket_policy" mkosi.scripts/particleos.postinst.chroot
     [[ -f "mkosi.extra/usr/lib/particleos/selinux/$socket_policy" ]] ||
         fail "missing SELinux socket policy: $socket_policy"
 done
-require_fixed "/usr/lib/particleos/selinux/particleos_homed_login.cil" mkosi.postinst.chroot
+require_fixed "/usr/lib/particleos/selinux/particleos_homed_login.cil" mkosi.scripts/particleos.postinst.chroot
 require_fixed ".local_login_t .systemd_userdbd_runtime_t" \
     mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 require_fixed ".chkpwd_t .systemd_userdbd_runtime_t" \
@@ -600,28 +594,28 @@ require_fixed "key_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_den
 require_fixed "netlink_xfrm_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil
 
 if rg -n '(^|[=:])http://' \
-        mkosi.conf mkosi.conf.d mkosi.resources mkosi.profiles "${obs_recipes[@]}"; then
+        mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.resources mkosi.obs.extra mkosi.images mkosi.profiles "${obs_recipes[@]}"; then
     fail "RPM and system-update repository transports must use HTTPS"
 fi
 
-if rg -n 'ID=install|system-install.target' mkosi.profiles/*/emergency-uki.conf; then
+if rg -n 'ID=install|system-install.target' mkosi.images/*/emergency-uki.conf; then
     fail "production UKIs must not contain the destructive installer profile"
 fi
 
-for transfer in mkosi.profiles/obs-sysupdate/mkosi.extra/usr/lib/sysupdate.d/*.transfer; do
+for transfer in mkosi.obs.extra/usr/lib/sysupdate.d/*.transfer; do
     require_fixed "Path=https://download.opensuse.org/repositories/home:/thefutureisprivate/%o_%w_images/" "$transfer"
 done
-if rg -n 'repositories/system:/systemd'     mkosi.profiles/obs-sysupdate/mkosi.extra/usr/lib/sysupdate.d; then
+if rg -n 'repositories/system:/systemd'     mkosi.obs.extra/usr/lib/sysupdate.d; then
     fail "production sysupdate must use home:thefutureisprivate"
 fi
 
 if rg -n -i '^[[:space:]]*(gnome|gdm|kde|plasma|sddm|sway|xorg|wayland|firefox)([[:space:]]|$)' \
-        mkosi.conf mkosi.conf.d mkosi.profiles "${obs_recipes[@]}"; then
+        mkosi.conf mkosi.role.conf mkosi.images mkosi.profiles "${obs_recipes[@]}"; then
     fail "desktop packages are forbidden"
 fi
 
 if rg -n -i '(mkosi\.rootpw|home\.create\.|hashedPassword|password[[:space:]]*[:=][[:space:]]*["'\''"]?particleos)' \
-        mkosi.conf mkosi.conf.d mkosi.credentials mkosi.extra mkosi.profiles .obs 2>/dev/null; then
+        mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.credentials mkosi.extra mkosi.obs.extra mkosi.images mkosi.profiles .obs 2>/dev/null; then
     fail "known-password material is forbidden"
 fi
 
@@ -633,7 +627,7 @@ if rg -n '[[:blank:]]+$' --glob '!.git/**' --glob '!AGENTS.md' .; then
     fail "trailing whitespace is forbidden"
 fi
 
-for script in mkosi.bump mkosi.clean mkosi.finalize mkosi.postinst.chroot scripts/*.sh; do
+for script in mkosi.bump mkosi.scripts/* scripts/*.sh; do
     /usr/bin/bash -n "$script"
 done
 

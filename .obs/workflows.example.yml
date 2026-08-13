@@ -2,7 +2,7 @@ rebuild:
   steps:
     - trigger_services:
         project: home:thefutureisprivate
-        package: custom-particleos-webserver
+        package: custom-particleos
   filters:
     event: push
     branches:

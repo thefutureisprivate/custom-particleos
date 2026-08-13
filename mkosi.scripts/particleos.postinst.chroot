@@ -98,22 +98,8 @@ ln --symbolic 20-systemd-userdb.conf.example /usr/lib/tmpfiles.d/20-systemd-user
 # Keep the installed host headless.
 ln --symbolic --force multi-user.target /usr/lib/systemd/system/default.target
 
-# Select exactly one current appliance role. This also makes unknown or combined
-# role configurations fail during the image build instead of producing an
-# ambiguous OS identity.
-particleos_role_count=0
-IFS=, read -r -a configured_profiles <<<"$PROFILES"
-for configured_profile in "${configured_profiles[@]}"; do
-    case "$configured_profile" in
-        webserver | mailserver | dnsserver)
-            ((particleos_role_count += 1))
-            ;;
-    esac
-done
-if ((particleos_role_count != 1)); then
-    echo "exactly one ParticleOS role profile is required: $PROFILES" >&2
-    exit 1
-fi
+# The dependency graph invokes this hook only for a complete role image. Reject
+# an unknown identity rather than generating a mixed or ambiguous appliance.
 
 case "$IMAGE_ID" in
     ParticleOS-Webserver)

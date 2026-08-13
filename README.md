@@ -1,10 +1,11 @@
 # Custom ParticleOS
 
 This repository builds custom, minimal, immutable Fedora 44 x86-64 ParticleOS
-images. The current profiles target server appliances for VPSs. A shared
-hardened base is extended by exactly one explicit role profile; building
-without a role or combining roles fails rather than producing an ambiguous
-image.
+images. The current images target server appliances for VPSs. A single mkosi
+dependency graph assembles an unpublished Fedora base directory once and then
+copies it into every requested complete role image. Role packages, identity,
+policy, finalization, partitioning, dm-verity, and UKI generation are applied
+only to those derived images.
 
 The role-oriented layout leaves room for a future desktop variant. It is not a
 current build target and will require its own package set, policy, and tests.
@@ -15,15 +16,18 @@ current build target and will require its own package set, policy, and tests.
 | `mailserver` | `ParticleOS-Mailserver` | None yet; reserved for the project Stalwart package | Dormant placeholder; not built by OBS |
 | `dnsserver` | `ParticleOS-Dnsserver` | None | Empty placeholder; not built by OBS |
 
-The dormant profiles reserve image identities and fail-closed role boundaries
+The dormant image definitions reserve identities and fail-closed role boundaries
 without adding packages. Mail will use a project-provided Stalwart package once
 that package and its immutable policy exist. DNS has no payload and no current
-build target.
+build target. The aggregate currently requests only `webserver`; when more
+roles become production-ready, one mkosi invocation can request them together
+and mkosi will still build the shared `base` dependency only once.
 
 There is intentionally no `Containerfile`, OCI image, bootc layer, or
-container build. [`mkosi.conf`](./mkosi.conf) is the shared native build
-description. The only current OBS entry point is the
-[webserver recipe](./.obs/fedora/x86-64/webserver/mkosi.conf).
+container build. [`mkosi.conf`](./mkosi.conf) is the native dependency-graph
+entry point, [`mkosi.role.conf`](./mkosi.role.conf) is the common final-image
+policy, and the only OBS dependency recipe is
+[`.obs/fedora/x86-64/mkosi.conf`](./.obs/fedora/x86-64/mkosi.conf).
 
 This repository derives its image layout from
 [systemd/particleos](https://github.com/systemd/particleos) and adapts the
@@ -91,7 +95,7 @@ particleOS OBS mechanism documented in the
 and its
 [SCM build-recipe extraction guide](https://openbuildservice.org/help/manuals/obs-user-guide/cha-obs-concepts).
 
-1. Create the `custom-particleos-webserver` image package in the
+1. Create the single `custom-particleos` image package in the
    [`home:thefutureisprivate`](https://build.opensuse.org/repositories/home:thefutureisprivate)
    OBS project.
 
@@ -102,11 +106,12 @@ and its
    Repotype: checksumsfile:rawsig staticlinks
    ```
 
-3. Copy the [webserver `_service`
-   template](./.obs/fedora/x86-64/webserver/_service.example) into that OBS
+3. Copy the generic [`_service`
+   template](./.obs/fedora/x86-64/_service.example) into that OBS
    package as `_service`. Replace `REPLACE_WITH_REVIEWED_COMMIT` with the full
-   immutable reviewed commit ID. The `obs_scm` service exports only the nested
-   webserver mkosi recipe as the package build description.
+   immutable reviewed commit ID. The `obs_scm` service exports the dependency
+   closure as OBS's package recipe while mkosi 26 executes the canonical graph
+   from the exported SCM tree.
 
 4. Apply [`.obs/project-meta.example.xml`](./.obs/project-meta.example.xml) as
    the project metadata. Both Fedora repositories must inherit from
@@ -135,7 +140,7 @@ and its
    with a policy signed by a certificate absent from the exclusive UEFI
    database.
 
-6. Run and commit the source service in the webserver package checkout:
+6. Run and commit the source service in the generic image package checkout:
 
    ```sh
    osc service run
@@ -143,9 +148,12 @@ and its
    osc results
    ```
 
-The recipe includes `mkosi-obs` and carries `# needssslcertforbuild`. OBS
-therefore supplies the project certificate to sign the bootloader, UKIs, and
-dm-verity metadata without exposing the project private key to this repository.
+The recipe carries `# needssslcertforbuild`, so OBS supplies the public project
+certificate. Its presence is matched by
+[`mkosi.obs.conf`](./mkosi.obs.conf), which enables `mkosi-obs` independently
+for each complete role image and adds the matching sysupdate publication
+source. OBS signs the bootloader, UKIs, and dm-verity metadata without exposing
+the project private key to this repository.
 That project certificate is the only key enrolled in the image's Secure Boot
 database. Root and swap are bound directly to PCR 7; expected-PCR signing is
 disabled because OBS's RSA-4096 project key is not accepted as an external
@@ -161,10 +169,10 @@ verification uses the project-signed final per-artifact SHA-256 files from OBS.
 
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM
-workflow configuration. It triggers only `custom-particleos-webserver`, whose service
+workflow configuration. It triggers only `custom-particleos`, whose service
 remains pinned until its reviewed commit is explicitly advanced. Mail and DNS
-intentionally have no OBS recipe or workflow trigger while their roles are
-dormant.
+remain definitions in the graph but are not aggregate dependencies while they
+are dormant.
 
 ## Validate a change
 
@@ -174,15 +182,15 @@ Run the repository checks before updating the OBS package:
 ./scripts/validate.sh
 ```
 
-Resolve the production role before release; there is intentionally no default
-profile:
+Inspect the production graph and local custom repositories before release:
 
 ```sh
-mkosi --profile=webserver,obs-repos summary
+mkosi --profile=obs-repos summary
 ```
 
-Static validation also enforces that the mail and DNS profiles select no role
-packages and have no OBS recipes.
+Static validation also enforces that the base has no final-image hooks, the
+webserver depends on `base` and `initrd`, and dormant mail and DNS images select
+no role packages and are not aggregate dependencies.
 
 The checks reject container recipes, Fedora releases other than 44, desktop
 packages, `sudo`, known-password credentials, private-key files, and missing
@@ -228,8 +236,8 @@ run0 journalctl --boot
 
 The current published artifact reports the `ParticleOS-Webserver` image ID and
 complete image version through `hostnamectl`. `ParticleOS-Mailserver` and
-`ParticleOS-Dnsserver` are reserved identities for the dormant profiles. These
-values describe the atomic image slot and are separate from Fedora's
+`ParticleOS-Dnsserver` are reserved identities for dormant image definitions.
+These values describe the atomic image slot and are separate from Fedora's
 package-compatible `ID=fedora` and `VERSION_ID=44`.
 
 ### Adopt an existing homed account
@@ -430,7 +438,7 @@ release-critical trust roots.
 Configuration under `/usr/lib/particleos` is immutable and changes through a
 new signed image. Per-machine SSH policy and homed storage are shared mutable
 surfaces. The webserver role additionally permits Certbot state, nginx virtual
-hosts, and web content. The dormant mail and DNS profiles add no packages or
+hosts, and web content. The dormant mail and DNS images add no packages or
 mutable role policy. Add required virtual hardware drivers to the early module
 list before building: module loading is permanently disabled for the rest of
 each boot.
