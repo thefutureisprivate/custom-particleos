@@ -168,6 +168,12 @@ dm-verity signing. OBS forces mkosi to create a first-pass SHA256SUMS aggregate,
 which becomes stale when OBS attaches signatures in the second pass. A guarded
 post-output hook discards only that aggregate before publication. Release
 verification uses the project-signed final per-artifact SHA-256 files from OBS.
+The published role manifest intentionally lists the packages added after the
+shared base was copied, matching mkosi's base-tree semantics. The separately
+published `base.manifest` is the full shared package inventory; review both
+manifests for a complete role image. Package-created loose boot artifacts are
+removed at the base boundary so only role-generated, OBS-signed UKIs reach the
+final ESP.
 
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM

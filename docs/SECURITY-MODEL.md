@@ -40,6 +40,10 @@ what the image alone can guarantee.
 5. systemd-sysupdate writes complete A/B usr, verity, signature, and UKI
    artifacts; boot counting retains a fallback instance.
 
+The shared base removes every package-created loose boot artifact before it is
+copied into a role. Only the role build may populate the ESP, and it does so
+with OBS-signed UKIs.
+
 The shared base enables the update and conditional-reboot timers. New UKIs
 receive three attempts. During a counted boot,
 `systemd-boot-check-no-failures.service` blocks `boot-complete.target` if a
@@ -191,6 +195,9 @@ executable memfd fallback, kernel pointers/logs, SysRq, unsafe line-discipline
 autoload, and core dumps are disabled or restricted. Core dumping is denied by
 the kernel pipe target, system and user manager limits, PAM limits, the
 systemd-coredump configuration, and masked coredump activation units. The
+foreign-binary-format service and procfs activation units are also masked;
+this server image has no binfmt use case and therefore never needs to load
+`binfmt_misc`. The coredump
 socket is pulled in statically by `sockets.target`, so a preset alone cannot
 disable it; both the socket and its service are vendor-masked in immutable
 `/usr`.
@@ -372,7 +379,8 @@ A webserver release is not complete until the exact OBS artifact has been:
 
 1. built from an immutable reviewed commit;
 2. checked against every OBS project-signed per-artifact SHA-256 file and
-   inspected for successful image manifest generation;
+   inspected for successful role-delta and full shared-base manifest
+   generation;
 3. installed and booted with Secure Boot, TPM2 encryption, dm-verity, IPE, and
    SELinux enforcement active;
 4. tested for firewall fail-closed behavior, DoT-only resolver egress, local

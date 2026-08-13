@@ -7,6 +7,13 @@ set -e
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"
 
+# This VPS image never executes foreign binary formats. Mask the static loader
+# and its procfs activation units so they cannot load binfmt_misc before the
+# irreversible module lockdown.
+ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-binfmt.service"
+ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/proc-sys-fs-binfmt_misc.automount"
+ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/proc-sys-fs-binfmt_misc.mount"
+
 # Fedora's per-connection SSH unit wants this static target, which would create
 # RSA and ECDSA host keys alongside Ed25519. The socket requires the exact
 # Ed25519 generator directly, so mask the broad target without duplicating the

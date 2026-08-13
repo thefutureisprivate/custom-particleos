@@ -81,6 +81,8 @@ require_fixed "ImageId=ParticleOS-Base" "$base_config"
 require_fixed "CleanPackageMetadata=no" "$base_config"
 require_fixed "Bootable=no" "$base_config"
 require_fixed "SELinuxRelabel=no" "$base_config"
+require_fixed "ManifestFormat=json" "$base_config"
+require_fixed "/boot/*" "$base_config"
 require_fixed "Profiles=" "$base_config"
 for forbidden_base_setting in \
         "BaseTrees=" \
@@ -134,6 +136,7 @@ require_fixed "SecureBoot=yes" "$role_policy"
 require_fixed "SignExpectedPcr=no" "$role_policy"
 require_fixed "PostInstallationScripts=%D/$postinst" "$role_policy"
 require_fixed "FinalizeScripts=%D/$finalize" "$role_policy"
+require_fixed "KernelInitrdModules=default,-binfmt_misc" "$role_policy"
 require_fixed "PostOutputScripts=%D/mkosi.scripts/remove-first-pass-checksum" "$role_policy"
 
 require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$obs_config"
@@ -230,14 +233,17 @@ pcrlogin_dropin=mkosi.extra/usr/lib/systemd/system/systemd-pcrlogin@.service.d/4
 require_fixed "ConditionPathExists=/run/systemd/nvpcr/hardware.auth" "$pcrproduct_dropin"
 require_fixed "ConditionPathExists=/run/systemd/nvpcr/login.auth" "$pcrlogin_dropin"
 selinux_relabel_unit=mkosi.extra/usr/lib/systemd/system/particleos-selinux-runtime-relabel.service
+selinux_relabel_tmpfiles=mkosi.extra/usr/lib/tmpfiles.d/particleos-selinux-runtime.conf
 selinux_udev_service_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd.service.d/10-selinux-runtime-relabel.conf
 selinux_udev_kernel_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd-kernel.socket.d/10-selinux-runtime-relabel.conf
 selinux_udev_varlink_dropin=mkosi.extra/usr/lib/systemd/system/systemd-udevd-varlink.socket.d/10-selinux-runtime-relabel.conf
 require_fixed "DefaultDependencies=no" "$selinux_relabel_unit"
 require_fixed "ConditionSecurity=selinux" "$selinux_relabel_unit"
-require_fixed "ExecStart=/usr/sbin/restorecon -RF /dev /run/udev" "$selinux_relabel_unit"
+require_fixed "ExecStart=/usr/bin/systemd-tmpfiles --create --prefix=/dev --prefix=/run/udev" "$selinux_relabel_unit"
 require_fixed "RemainAfterExit=yes" "$selinux_relabel_unit"
 require_fixed "Before=systemd-udevd.service systemd-udevd-kernel.socket systemd-udevd-varlink.socket" "$selinux_relabel_unit"
+require_fixed "Z /dev - - - -" "$selinux_relabel_tmpfiles"
+require_fixed "Z /run/udev - - - -" "$selinux_relabel_tmpfiles"
 for selinux_udev_dropin in "$selinux_udev_service_dropin" "$selinux_udev_kernel_dropin" "$selinux_udev_varlink_dropin"; do
     require_fixed "Requires=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
     require_fixed "After=particleos-selinux-runtime-relabel.service" "$selinux_udev_dropin"
@@ -541,6 +547,14 @@ require_fixed "* hard core 0" mkosi.extra/usr/lib/security/limits.d/60-particleo
 require_fixed "Storage=none" mkosi.extra/usr/lib/systemd/coredump.conf.d/40-particleos.conf
 require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump.socket"' mkosi.scripts/particleos.finalize
 require_fixed 'ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/systemd-coredump@.service"' mkosi.scripts/particleos.finalize
+for masked_binfmt_unit in \
+        systemd-binfmt.service \
+        proc-sys-fs-binfmt_misc.automount \
+        proc-sys-fs-binfmt_misc.mount; do
+    require_fixed "ln -sfn /dev/null \"\$BUILDROOT/usr/lib/systemd/system/$masked_binfmt_unit\"" \
+        mkosi.scripts/particleos.finalize
+done
+reject_fixed "fs.binfmt_misc.status" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "disable authselect-apply-changes.service"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed "enable polkit-agent-helper.socket" \
     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset

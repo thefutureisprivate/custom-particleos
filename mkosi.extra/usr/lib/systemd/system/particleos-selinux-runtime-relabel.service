@@ -2,7 +2,7 @@
 
 [Unit]
 Description=Relabel initrd runtime state after switch-root
-Documentation=man:restorecon(8)
+Documentation=man:systemd-tmpfiles(8) man:tmpfiles.d(5)
 DefaultDependencies=no
 ConditionSecurity=selinux
 ConditionPathExists=/run/udev
@@ -11,4 +11,4 @@ Before=systemd-udevd.service systemd-udevd-kernel.socket systemd-udevd-varlink.s
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/restorecon -RF /dev /run/udev
+ExecStart=/usr/bin/systemd-tmpfiles --create --prefix=/dev --prefix=/run/udev
