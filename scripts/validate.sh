@@ -53,6 +53,8 @@ base_config=mkosi.images/base/mkosi.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
 role_policy=mkosi.role.conf
 obs_config=mkosi.obs.conf
+role_obs_config=mkosi.role.obs.conf
+obs_postoutput=mkosi.scripts/particleos-obs-postoutput
 obs_recipe=.obs/fedora/x86-64/mkosi.conf
 service_template=.obs/fedora/x86-64/_service.example
 postinst=mkosi.scripts/particleos.postinst.chroot
@@ -136,8 +138,21 @@ require_fixed "PostOutputScripts=%D/mkosi.scripts/remove-first-pass-checksum" "$
 
 require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$obs_config"
 require_fixed "Include=mkosi-obs" "$obs_config"
-require_fixed "ExtraTrees=%D/mkosi.obs.extra" "$obs_config"
-require_fixed "Include=%D/mkosi.obs.conf" "$role_policy"
+require_fixed "Include=%D/mkosi.obs.conf" mkosi.conf
+require_fixed "PostOutputScripts=" mkosi.conf
+require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$role_obs_config"
+require_fixed "CompressOutput=zstd" "$role_obs_config"
+require_fixed "SecureBoot=no" "$role_obs_config"
+require_fixed "SignExpectedPcr=no" "$role_obs_config"
+require_fixed "Verity=defer" "$role_obs_config"
+require_fixed "Checksum=yes" "$role_obs_config"
+require_fixed "ExtraTrees=%D/mkosi.obs.extra" "$role_obs_config"
+require_fixed "PostOutputScripts=%D/$obs_postoutput" "$role_obs_config"
+require_fixed "Include=%D/mkosi.role.obs.conf" "$role_policy"
+reject_fixed "Include=mkosi-obs" "$role_policy"
+test -x "$obs_postoutput" || fail "$obs_postoutput must be executable"
+require_fixed "import mkosi.resources" "$obs_postoutput"
+require_fixed "exec \"\$mkosi_obs_postoutput\" \"\$@\"" "$obs_postoutput"
 
 require_fixed "# needssslcertforbuild" "$obs_recipe"
 require_fixed "Dependencies=webserver" "$obs_recipe"
@@ -543,7 +558,7 @@ require_fixed 'HOME_URL="https://github.com/thefutureisprivate/custom-particleos
     mkosi.scripts/particleos.postinst.chroot
 old_repository_url='github.com/thefutureisprivate/'particleos-webserver
 if rg -n -F "$old_repository_url" \
-        README.md NOTICE docs mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.resources mkosi.images mkosi.profiles "$postinst" .obs; then
+        README.md NOTICE docs mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.role.obs.conf mkosi.resources mkosi.images mkosi.profiles "$postinst" .obs; then
     fail "the old GitHub repository name must not remain in project metadata"
 fi
 
@@ -594,7 +609,7 @@ require_fixed "key_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_den
 require_fixed "netlink_xfrm_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil
 
 if rg -n '(^|[=:])http://' \
-        mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.resources mkosi.obs.extra mkosi.images mkosi.profiles "${obs_recipes[@]}"; then
+        mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.role.obs.conf mkosi.resources mkosi.obs.extra mkosi.images mkosi.profiles "${obs_recipes[@]}"; then
     fail "RPM and system-update repository transports must use HTTPS"
 fi
 
@@ -615,7 +630,7 @@ if rg -n -i '^[[:space:]]*(gnome|gdm|kde|plasma|sddm|sway|xorg|wayland|firefox)(
 fi
 
 if rg -n -i '(mkosi\.rootpw|home\.create\.|hashedPassword|password[[:space:]]*[:=][[:space:]]*["'\''"]?particleos)' \
-        mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.credentials mkosi.extra mkosi.obs.extra mkosi.images mkosi.profiles .obs 2>/dev/null; then
+        mkosi.conf mkosi.role.conf mkosi.obs.conf mkosi.role.obs.conf mkosi.credentials mkosi.extra mkosi.obs.extra mkosi.images mkosi.profiles .obs 2>/dev/null; then
     fail "known-password material is forbidden"
 fi
 

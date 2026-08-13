@@ -149,11 +149,13 @@ and its
    ```
 
 The recipe carries `# needssslcertforbuild`, so OBS supplies the public project
-certificate. Its presence is matched by
-[`mkosi.obs.conf`](./mkosi.obs.conf), which enables `mkosi-obs` independently
-for each complete role image and adds the matching sysupdate publication
-source. OBS signs the bootloader, UKIs, and dm-verity metadata without exposing
-the project private key to this repository.
+certificate. Its presence makes [`mkosi.obs.conf`](./mkosi.obs.conf) load the
+upstream `mkosi-obs` build/signing machinery once on the non-installing
+aggregate. [`mkosi.role.obs.conf`](./mkosi.role.obs.conf) applies deferred
+signing and the matching sysupdate publication source independently to each
+complete role. A location-independent adapter invokes the signer from the
+active mkosi installation. OBS signs the bootloader, UKIs, and dm-verity
+metadata without exposing the project private key to this repository.
 That project certificate is the only key enrolled in the image's Secure Boot
 database. Root and swap are bound directly to PCR 7; expected-PCR signing is
 disabled because OBS's RSA-4096 project key is not accepted as an external

@@ -1,0 +1,18 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+
+# The Python package path follows the builder's Python version. Resolve it from
+# the active mkosi installation instead of embedding a versioned filesystem path.
+mkosi_obs_postoutput="$('/usr/bin/python3' -c '
+from pathlib import Path
+import mkosi.resources
+print(Path(mkosi.resources.__file__).parent / "mkosi-obs" / "mkosi.postoutput")
+')"
+
+if [[ ! -x "$mkosi_obs_postoutput" ]]; then
+    echo "mkosi-obs post-output signer is missing or not executable: $mkosi_obs_postoutput" >&2
+    exit 1
+fi
+
+exec "$mkosi_obs_postoutput" "$@"
