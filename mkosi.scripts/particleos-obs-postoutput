@@ -34,7 +34,7 @@ fi
 
 printf '%s\n' \
     '' \
-    '[Content]' \
+    '[Build]' \
     'BuildScripts=' \
     'BuildScripts=/usr/src/packages/SOURCES/custom-particleos/mkosi.scripts/particleos-obs-build' \
     >>"$second_stage_config"
