@@ -65,7 +65,7 @@ require_fixed "Dependencies=webserver" mkosi.conf
 reject_fixed "Dependencies=mailserver" mkosi.conf
 reject_fixed "Dependencies=dnsserver" mkosi.conf
 require_fixed "Format=none" mkosi.conf
-require_fixed "Overlay=yes" mkosi.conf
+require_fixed "Overlay=no" mkosi.conf
 if grep -q '^Profiles=' mkosi.conf; then
     fail "mkosi.conf must not select a profile"
 fi
