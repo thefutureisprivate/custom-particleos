@@ -13,6 +13,11 @@
   (allow .init_t .sshd_keygen_t (process2 (nosuid_transition)))
   (allow .init_t .chronyd_t (process2 (nosuid_transition)))
 
+  ; A successful counted boot transitions the stock systemd-bless-boot helper
+  ; through bootloader_exec_t into bootloader_t before marking the UKI good.
+  ; Preserve that Fedora transition from the nosuid /usr mount.
+  (allow .init_t .bootloader_t (process2 (nosuid_transition)))
+
   ; Preserve the existing Fedora transitions for helpers launched by the
   ; confined boot services once /usr is mounted nosuid. These are chained
   ; transitions, so granting init_t access alone is insufficient.

@@ -445,6 +445,7 @@ require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups"     mkosi
 require_fixed "enable systemd-sysupdate-update.timer"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 rollback_dropin=mkosi.extra/usr/lib/systemd/system/systemd-boot-check-no-failures.service.d/40-particleos-rollback.conf
+bless_rollback_dropin=mkosi.extra/usr/lib/systemd/system/systemd-bless-boot.service.d/40-particleos-rollback.conf
 web_health_unit="$web_extra/usr/lib/systemd/system/particleos-webserver-health.service"
 web_health_check="$web_extra/usr/lib/particleos/health/webserver"
 
@@ -452,6 +453,9 @@ require_fixed "enable systemd-sysupdate-reboot.timer" "$base_preset"
 require_fixed "enable systemd-boot-check-no-failures.service" "$base_preset"
 require_fixed "FailureAction=reboot" "$rollback_dropin"
 require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" "$rollback_dropin"
+require_fixed "FailureAction=reboot" "$bless_rollback_dropin"
+require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" \
+    "$bless_rollback_dropin"
 require_fixed "Requires=nginx.service" "$web_health_unit"
 require_fixed "Before=boot-complete.target" "$web_health_unit"
 require_fixed "FailureAction=reboot" "$web_health_unit"
@@ -639,6 +643,7 @@ require_fixed ".init_t .ldconfig_t (process2 (nosuid_transition))" "$nosuid_tran
 require_fixed ".init_t .iptables_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .sshd_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .chronyd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".init_t .bootloader_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".udev_t .systemd_sysctl_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".udev_t .lvm_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".sshd_keygen_t .ssh_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
