@@ -164,7 +164,13 @@ require_fixed "BuildScripts=/usr/src/packages/SOURCES/particleos-obs-build" "$ob
 require_fixed "import mkosi.resources" "$obs_build"
 require_fixed '"$mkosi_obs_build" "$@"' "$obs_build"
 require_fixed "base.manifest.gz" "$obs_build"
-require_fixed 'cp --reflink=auto -- "$base_manifest" "$obs_output_dir/"' "$obs_build"
+require_fixed "copy_release_metadata /usr/src/packages/SOURCES/base.manifest.gz" "$obs_build"
+require_fixed "role_roothashes=(/usr/src/packages/SOURCES/ParticleOS-*.roothash)" "$obs_build"
+require_fixed 'role_prefix=${roothash%.roothash}' "$obs_build"
+for role_metadata_suffix in manifest.gz osrelease repart.tar; do
+    require_fixed 'copy_release_metadata "$role_prefix.'"$role_metadata_suffix"'"' "$obs_build"
+done
+require_fixed "No ParticleOS role roothashes were supplied to the signing pass" "$obs_build"
 
 require_fixed "# needssslcertforbuild" "$obs_recipe"
 require_fixed "Dependencies=webserver,mailserver" "$obs_recipe"

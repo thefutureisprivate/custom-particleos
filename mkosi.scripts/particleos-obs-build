@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -euo pipefail
 
-# Keep the upstream signing implementation authoritative, then add the shared
-# base package inventory which its IMAGE_ID-only collector otherwise omits.
+# Keep the upstream signing implementation authoritative, then add aggregate
+# metadata which its single-IMAGE_ID collector otherwise omits. Signable role
+# artifacts are still handled exclusively by the upstream implementation.
 mkosi_obs_build="$('/usr/bin/python3' -c '
 from pathlib import Path
 import mkosi.resources
@@ -17,16 +18,41 @@ fi
 
 "$mkosi_obs_build" "$@"
 
-base_manifest=/usr/src/packages/SOURCES/base.manifest.gz
-if [[ ! -f "$base_manifest" ]]; then
-    echo "Compressed shared-base manifest is missing: $base_manifest" >&2
-    exit 1
-fi
-
 obs_output_dir=/work/src/usr/src/packages/OTHER
 if [[ ! -d "$obs_output_dir" ]]; then
     echo "OBS output directory is missing: $obs_output_dir" >&2
     exit 1
 fi
 
-cp --reflink=auto -- "$base_manifest" "$obs_output_dir/"
+copy_release_metadata() {
+    local source=$1
+
+    if [[ ! -f "$source" ]]; then
+        echo "Required aggregate release metadata is missing: $source" >&2
+        exit 1
+    fi
+
+    cp --reflink=auto -- "$source" "$obs_output_dir/"
+}
+
+copy_release_metadata /usr/src/packages/SOURCES/base.manifest.gz
+
+# A non-installing aggregate can emit multiple complete roles. Upstream copies
+# metadata only for mkosi's final IMAGE_ID, although it correctly signs every
+# staged UKI, bootloader, and roothash. Derive each exact role prefix from the
+# roothashes that entered that signing pass and require its complete update and
+# audit metadata. Do not republish the bare roothash itself: upstream removes
+# it deliberately so importctl cannot misidentify it as the raw disk's hash.
+shopt -s nullglob
+role_roothashes=(/usr/src/packages/SOURCES/ParticleOS-*.roothash)
+if ((${#role_roothashes[@]} == 0)); then
+    echo "No ParticleOS role roothashes were supplied to the signing pass" >&2
+    exit 1
+fi
+
+for roothash in "${role_roothashes[@]}"; do
+    role_prefix=${roothash%.roothash}
+    copy_release_metadata "$role_prefix.manifest.gz"
+    copy_release_metadata "$role_prefix.osrelease"
+    copy_release_metadata "$role_prefix.repart.tar"
+done
