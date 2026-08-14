@@ -3,6 +3,9 @@
 set -euo pipefail
 umask 0077
 
+_particleos_init_status=0
+trap '_particleos_init_status=$?; printf "ParticleOS PostgreSQL initialization failed at line %d: %s (status %d)\n" "$LINENO" "$BASH_COMMAND" "$_particleos_init_status" >&2; exit "$_particleos_init_status"' ERR
+
 pgdata=/var/lib/pgsql/data
 marker=$pgdata/.particleos-initialized
 
