@@ -17,6 +17,16 @@
   ; confined boot services once /usr is mounted nosuid. These are chained
   ; transitions, so granting init_t access alone is insufficient.
   (allow .udev_t .systemd_sysctl_t (process2 (nosuid_transition)))
+  (allow .udev_t .lvm_t (process2 (nosuid_transition)))
   (allow .sshd_keygen_t .ssh_keygen_t (process2 (nosuid_transition)))
+  (allow .sshd_keygen_t .setfiles_t (process2 (nosuid_transition)))
   (allow .systemd_homed_t .systemd_homework_t (process2 (nosuid_transition)))
-  (allow .getty_t .local_login_t (process2 (nosuid_transition))))
+  (allow .getty_t .local_login_t (process2 (nosuid_transition)))
+
+  ; A homed login starts the per-user manager and then enters the Fedora user
+  ; domain. OpenSSH additionally re-executes through sshd_session_t. Fedora
+  ; already defines and permits these transitions on ordinary mounts.
+  (allow .init_t .unconfined_t (process2 (nosuid_transition)))
+  (allow .local_login_t .unconfined_t (process2 (nosuid_transition)))
+  (allow .sshd_t .sshd_session_t (process2 (nosuid_transition)))
+  (allow .sshd_session_t .unconfined_t (process2 (nosuid_transition))))

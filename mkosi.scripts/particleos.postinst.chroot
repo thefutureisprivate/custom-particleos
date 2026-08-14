@@ -69,7 +69,19 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_deny_obscure_sockets.cil \
     /usr/lib/particleos/selinux/secureblue_deny_packet_radio_sockets.cil \
     /usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil \
+    /usr/lib/particleos/selinux/particleos_runtime_symlinks.cil \
     /usr/lib/particleos/selinux/particleos_homed_login.cil
+
+# /etc/selinux is an immutable factory symlink. systemd-tmpfiles consults the
+# policy file contexts when it verifies that link during boot; without this
+# exact symlink-only override it replaces the skeleton's etc_t label with
+# selinux_config_t, which prevents confined libselinux consumers from
+# resolving the policy location. Keep the target tree policy-labelled.
+selinux_local_contexts=/etc/selinux/targeted/contexts/files/file_contexts.local
+selinux_factory_link_context='/etc/selinux -l system_u:object_r:etc_t:s0'
+if ! grep -Fqx "$selinux_factory_link_context" "$selinux_local_contexts"; then
+    printf '%s\n' "$selinux_factory_link_context" >>"$selinux_local_contexts"
+fi
 restore_preload
 trap - EXIT
 

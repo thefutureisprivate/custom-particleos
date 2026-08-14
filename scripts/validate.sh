@@ -630,10 +630,23 @@ require_fixed ".init_t .iptables_t (process2 (nosuid_transition))" "$nosuid_tran
 require_fixed ".init_t .sshd_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .chronyd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".udev_t .systemd_sysctl_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".udev_t .lvm_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".sshd_keygen_t .ssh_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".sshd_keygen_t .setfiles_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".systemd_homed_t .systemd_homework_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".getty_t .local_login_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".init_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".local_login_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".sshd_t .sshd_session_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".sshd_session_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 reject_fixed "nnp_transition" "$nosuid_transition_policy"
+runtime_symlink_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_runtime_symlinks.cil
+require_fixed "/usr/lib/particleos/selinux/particleos_runtime_symlinks.cil" \
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed ".init_t .udev_var_run_t (lnk_file (create))" "$runtime_symlink_policy"
+require_fixed ".systemd_homed_t .udev_var_run_t (lnk_file (read))" "$runtime_symlink_policy"
+require_fixed "selinux_factory_link_context='/etc/selinux -l system_u:object_r:etc_t:s0'" \
+    mkosi.scripts/particleos.postinst.chroot
 require_fixed ".local_login_t .systemd_userdbd_runtime_t" \
     mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 require_fixed ".chkpwd_t .systemd_userdbd_runtime_t" \

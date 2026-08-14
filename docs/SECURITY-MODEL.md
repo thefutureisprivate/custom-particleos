@@ -166,14 +166,15 @@ separate `process2:nosuid_transition` permission before a program on `/usr` may
 enter its daemon domain. Fedora grants this to some systemd services but not to
 every daemon shipped here. ParticleOS grants only the missing `init_t`
 transitions to `udev_t`, `system_dbusd_t`, `ldconfig_t`, `iptables_t`,
-`sshd_keygen_t`, and `chronyd_t`; it does not grant the related
-`nnp_transition` permission or any runtime-file access to `init_t`.
-The same narrowly scoped policy preserves Fedora's chained transitions from
-`udev_t` to `systemd_sysctl_t`, `sshd_keygen_t` to `ssh_keygen_t`,
-`systemd_homed_t` to `systemd_homework_t`, and `getty_t` to `local_login_t`.
-They are required respectively for device sysctls, the Ed25519 SSH host key,
-the first-boot homed administrator, and console authentication; no unrelated
-source domain receives permission to enter those targets.
+`sshd_keygen_t`, `chronyd_t`, and the policy-selected login user domain; it
+does not grant the related `nnp_transition` permission or any runtime-file
+access to `init_t`.
+The same narrowly scoped policy preserves Fedora's chained transitions for
+device sysctls and LVM probing, Ed25519 host-key generation and relabeling,
+homed account creation, console authentication, the per-user manager and
+login shell, and OpenSSH's current session re-exec. Each source and target is
+named explicitly; no unrelated domain receives `nosuid_transition` and the
+related `nnp_transition` permission is never granted.
 Fedora also labels systemd's udev compatibility launcher symlink `lib_t`
 instead of `udev_exec_t`. The host unit therefore executes its correctly
 labelled `/usr/bin/udevadm` target directly while retaining the
@@ -231,7 +232,11 @@ threat-model review.
 The writable-root skeleton carries SELinux labels before switch-root. Its
 `/etc/selinux` factory symlink is labelled `etc_t` so early systemd generators
 can traverse it, while the immutable target policy files keep their
-policy-specific labels.
+policy-specific labels. An exact symlink-only local file-context entry keeps
+systemd-tmpfiles from replacing that label with `selinux_config_t`; it does not
+change any label below the immutable policy directory. PID 1 may create the
+udev compatibility control symlink and homed may read that link, but neither
+receives access to the underlying Varlink endpoint from this policy.
 
 ## Network policy
 
