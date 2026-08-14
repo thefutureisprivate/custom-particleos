@@ -70,6 +70,7 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_deny_packet_radio_sockets.cil \
     /usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil \
     /usr/lib/particleos/selinux/particleos_runtime_symlinks.cil \
+    /usr/lib/particleos/selinux/particleos_pcr_measurement.cil \
     /usr/lib/particleos/selinux/particleos_homed_login.cil
 
 # /etc/selinux is an immutable factory symlink. systemd-tmpfiles consults the

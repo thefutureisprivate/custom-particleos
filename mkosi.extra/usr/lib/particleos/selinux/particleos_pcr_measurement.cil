@@ -1,0 +1,7 @@
+; SPDX-License-Identifier: LGPL-2.1-or-later
+
+; systemd-pcrextend resolves the measured dm-verity device through udev's
+; runtime database. Permit only reading that device metadata; the service does
+; not receive write access to udev state.
+(block particleos_pcr_measurement
+  (allow .systemd_pcrextend_t .udev_var_run_t (file (getattr open read))))

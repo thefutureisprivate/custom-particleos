@@ -9,6 +9,7 @@
   (allow .chkpwd_t .systemd_userdbd_runtime_t (sock_file (read)))
   (allow .policykit_t .systemd_userdbd_runtime_t (sock_file (read)))
   (allow .policykit_auth_t .systemd_userdbd_runtime_t (sock_file (read)))
+  (allow .sshd_session_t .systemd_userdbd_runtime_t (sock_file (read)))
 
   ; pam_systemd_home in polkit's private authentication helper talks directly
   ; to homed on the system bus and writes the already-open per-user suspend

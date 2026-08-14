@@ -29,7 +29,11 @@
   (allow .init_t .unconfined_t (process2 (nosuid_transition)))
   (allow .local_login_t .unconfined_t (process2 (nosuid_transition)))
   (allow .sshd_t .sshd_session_t (process2 (nosuid_transition)))
+  (allow .sshd_session_t .sshd_auth_t (process2 (nosuid_transition)))
   (allow .sshd_session_t .unconfined_t (process2 (nosuid_transition)))
+
+  ; Administrative chronyc calls retain Fedora's dedicated client domain.
+  (allow .unconfined_t .chronyc_t (process2 (nosuid_transition)))
 
   ; run0 authenticates through polkit's private PAM helper. Fedora already
   ; defines the confined chkpwd transition both for that helper and for PID 1's
