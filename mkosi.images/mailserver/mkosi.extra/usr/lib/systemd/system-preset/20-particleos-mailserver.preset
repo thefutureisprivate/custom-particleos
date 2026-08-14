@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# Provision PostgreSQL, secrets, TLS, and the permanent administrator before
+# enabling Stalwart. In particular, do not expose bootstrap HTTP port 8080.
+disable stalwart.service

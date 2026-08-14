@@ -13,15 +13,17 @@ current build target and will require its own package set, policy, and tests.
 | Role | Image ID | Additional packages | Service state |
 |---|---|---|---|
 | `webserver` | `ParticleOS-Webserver` | `nginx-core`, Certbot | Production role; nginx and renewal enabled |
-| `mailserver` | `ParticleOS-Mailserver` | None yet; reserved for the project Stalwart package | Dormant placeholder; not built by OBS |
+| `mailserver` | `ParticleOS-Mailserver` | PostgreSQL-only Stalwart | Built by OBS; disabled pending provisioning |
 | `dnsserver` | `ParticleOS-Dnsserver` | None | Empty placeholder; not built by OBS |
 
-The dormant image definitions reserve identities and fail-closed role boundaries
-without adding packages. Mail will use a project-provided Stalwart package once
-that package and its immutable policy exist. DNS has no payload and no current
-build target. The aggregate currently requests only `webserver`; when more
-roles become production-ready, one mkosi invocation can request them together
-and mkosi will still build the shared `base` dependency only once.
+The PostgreSQL-only Stalwart RPM recipe is maintained in the dedicated
+[custom-stalwart](https://github.com/thefutureisprivate/custom-stalwart)
+repository. Stalwart is installed but disabled until its database, secret,
+hostname, TLS, permanent administrator, and mail policy are provisioned. Its
+bootstrap/recovery listener on TCP 8080 is never public. DNS remains an empty
+placeholder with no current build target. The aggregate requests `webserver`
+and `mailserver` together, so mkosi assembles the shared `base` dependency once
+and derives both complete images from it.
 
 There is intentionally no `Containerfile`, OCI image, bootc layer, or
 container build. [`mkosi.conf`](./mkosi.conf) is the native dependency-graph
@@ -83,6 +85,13 @@ limits, modern TLS defaults, security headers, rate limits, and no version
 disclosure. Its non-root Certbot integration uses HTTP-01, requires the ACME
 `shortlived` profile, and crosses into nginx only through a fixed
 file-triggered validation/reload boundary.
+
+The mailserver role supplies the PostgreSQL-only Stalwart package behind a
+role-specific default-deny firewall. It admits only SMTP 25, HTTPS 443,
+implicit-TLS submission/IMAP/POP3 on 465/993/995, and ManageSieve 4190; legacy
+plaintext mail ports and bootstrap HTTP 8080 remain closed. Stalwart egress is
+limited to SMTP 25 and HTTPS 443. Provisioning instructions are installed at
+`/usr/share/doc/particleos/stalwart/README`.
 
 See [docs/SECURITY-MODEL.md](./docs/SECURITY-MODEL.md) for trust boundaries,
 GrapheneOS hardening coverage, and deliberate exclusions.
@@ -178,9 +187,8 @@ final ESP.
 For automatic source-service triggers, copy
 [`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM
 workflow configuration. It triggers only `custom-particleos`, whose service
-remains pinned until its reviewed commit is explicitly advanced. Mail and DNS
-remain definitions in the graph but are not aggregate dependencies while they
-are dormant.
+remains pinned until its reviewed commit is explicitly advanced. DNS remains a
+definition in the graph but is not an aggregate dependency while it is empty.
 
 ## Validate a change
 
@@ -196,9 +204,10 @@ Inspect the production graph and local custom repositories before release:
 mkosi --profile=obs-repos summary
 ```
 
-Static validation also enforces that the base has no final-image hooks, the
-webserver depends on `base` and `initrd`, and dormant mail and DNS images select
-no role packages and are not aggregate dependencies.
+Static validation also enforces that the base has no final-image hooks, both
+production roles depend on `base` and `initrd`, the legacy repository is
+filtered to Stalwart and only the mail role selects it, and the dormant DNS
+image selects no packages and is not an aggregate dependency.
 
 The checks reject container recipes, Fedora releases other than 44, desktop
 packages, `sudo`, known-password credentials, private-key files, and missing
@@ -242,11 +251,11 @@ run0 systemctl --failed
 run0 journalctl --boot
 ```
 
-The current published artifact reports the `ParticleOS-Webserver` image ID and
-complete image version through `hostnamectl`. `ParticleOS-Mailserver` and
-`ParticleOS-Dnsserver` are reserved identities for dormant image definitions.
-These values describe the atomic image slot and are separate from Fedora's
-package-compatible `ID=fedora` and `VERSION_ID=44`.
+Published artifacts report either `ParticleOS-Webserver` or
+`ParticleOS-Mailserver` plus their complete image version through
+`hostnamectl`. `ParticleOS-Dnsserver` remains reserved for the empty image
+definition. These values describe the atomic image slot and are separate from
+Fedora's package-compatible `ID=fedora` and `VERSION_ID=44`.
 
 ### Adopt an existing homed account
 

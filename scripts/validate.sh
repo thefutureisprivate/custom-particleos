@@ -41,6 +41,7 @@ if find . -path ./.git -prune -o -type f \( -iname 'Containerfile*' -o -iname 'D
 fi
 
 roles=(webserver mailserver dnsserver)
+built_roles=(webserver mailserver)
 declare -A role_image_ids=(
     [webserver]=ParticleOS-Webserver
     [mailserver]=ParticleOS-Mailserver
@@ -48,6 +49,7 @@ declare -A role_image_ids=(
 )
 declare -A role_packages=(
     [webserver]="certbot nginx-core"
+    [mailserver]="stalwart"
 )
 base_config=mkosi.images/base/mkosi.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
@@ -62,8 +64,7 @@ postinst=mkosi.scripts/particleos.postinst.chroot
 finalize=mkosi.scripts/particleos.finalize
 obs_recipes=("$obs_recipe")
 
-require_fixed "Dependencies=webserver" mkosi.conf
-reject_fixed "Dependencies=mailserver" mkosi.conf
+require_fixed "Dependencies=webserver,mailserver" mkosi.conf
 reject_fixed "Dependencies=dnsserver" mkosi.conf
 require_fixed "Format=none" mkosi.conf
 require_fixed "Overlay=no" mkosi.conf
@@ -109,13 +110,10 @@ for role in "${roles[@]}"; do
     require_fixed "SignExpectedPcr=no" "$emergency_uki"
 done
 
-for dormant_role in mailserver dnsserver; do
-    image_config="mkosi.images/$dormant_role/mkosi.conf"
-    if [[ -n "$(extract_stanza Packages "$image_config")" ]]; then
-        fail "$image_config must not select packages while the role is dormant"
-    fi
-done
-require_fixed "project-provided Stalwart package" mkosi.images/mailserver/mkosi.conf
+if [[ -n "$(extract_stanza Packages mkosi.images/dnsserver/mkosi.conf)" ]]; then
+    fail "mkosi.images/dnsserver/mkosi.conf must not select packages while the role is dormant"
+fi
+require_fixed "Stalwart is installed but deliberately disabled" mkosi.images/mailserver/mkosi.conf
 require_fixed "Empty placeholder" mkosi.images/dnsserver/mkosi.conf
 if rg -n '^[[:space:]]*(dovecot|dovecot-pigeonhole|postfix|postfix-pcre|dnsdist|unbound)[[:space:]]*$' \
         mkosi.conf mkosi.role.conf mkosi.images mkosi.profiles .obs/fedora/x86-64; then
@@ -169,7 +167,7 @@ require_fixed "base.manifest.gz" "$obs_build"
 require_fixed 'cp --reflink=auto -- "$base_manifest" "$obs_output_dir/"' "$obs_build"
 
 require_fixed "# needssslcertforbuild" "$obs_recipe"
-require_fixed "Dependencies=webserver" "$obs_recipe"
+require_fixed "Dependencies=webserver,mailserver" "$obs_recipe"
 xmllint --noout "$service_template"
 require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" "$service_template"
 require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$service_template"
@@ -184,16 +182,19 @@ if ! diff -u \
             extract_stanza Packages "$initrd_config"
             extract_stanza VolatilePackages "$initrd_config"
             extract_stanza Packages mkosi.images/webserver/mkosi.conf
+            extract_stanza Packages mkosi.images/mailserver/mkosi.conf
         } | sed '/^$/d' | sort -u) \
         <(extract_stanza BuildPackages "$obs_recipe" | sort -u); then
     fail "$obs_recipe BuildPackages= does not equal the selected graph package closure"
 fi
 
-for required_role_package in ${role_packages[webserver]}; do
-    require_fixed "$required_role_package" mkosi.images/webserver/mkosi.conf
-    require_fixed "$required_role_package" "$obs_recipe"
+for built_role in "${built_roles[@]}"; do
+    for required_role_package in ${role_packages[$built_role]}; do
+        require_fixed "$required_role_package" "mkosi.images/$built_role/mkosi.conf"
+        require_fixed "$required_role_package" "$obs_recipe"
+    done
 done
-for recipe in "$base_config" mkosi.images/webserver/mkosi.conf "$obs_recipe"; do
+for recipe in "$base_config" mkosi.images/webserver/mkosi.conf mkosi.images/mailserver/mkosi.conf "$obs_recipe"; do
     if grep -Eq '^[[:space:]]*sudo[[:space:]]*$' "$recipe"; then
         fail "$recipe installs sudo; ParticleOS uses run0"
     fi
@@ -316,6 +317,8 @@ require_fixed '<path project="system:systemd" repository="Fedora_44"/>' .obs/pro
 require_fixed '<repository name="particleos_base_Fedora_44">' .obs/project-meta.example.xml
 require_fixed '<path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>' \
     .obs/project-meta.example.xml
+require_fixed '<path project="home:thefutureisprivate" repository="Fedora_44"/>' \
+    .obs/project-meta.example.xml
 require_fixed "baseurl=https://download.opensuse.org/repositories/system:/systemd/Fedora_44/" mkosi.profiles/obs-repos/mkosi.conf.d/fedora/mkosi.conf.d/44.repo
 if rg -n '<path project="Fedora:44" repository="standard"/>' .obs/project-meta.example.xml; then
     fail "OBS must use Fedora 44 updates rather than the frozen release repository"
@@ -344,7 +347,7 @@ done
 
 require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/Fedora_44/" mkosi.resources/particleos-obs.repo
 require_fixed "priority=1" mkosi.resources/particleos-obs.repo
-require_fixed "includepkgs=hardened_malloc,ipe-policy,no_rlimit_as" mkosi.resources/particleos-obs.repo
+require_fixed "includepkgs=stalwart" mkosi.resources/particleos-obs.repo
 require_fixed "skip_if_unavailable=False" mkosi.resources/particleos-obs.repo
 require_fixed "repo_gpgcheck=1" mkosi.resources/particleos-obs.repo
 require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/particleos_base_Fedora_44/" \
@@ -354,6 +357,13 @@ require_fixed "includepkgs=hardened_malloc,ipe-policy,no_rlimit_as" \
     mkosi.resources/particleos-base-obs.repo
 require_fixed "skip_if_unavailable=False" mkosi.resources/particleos-base-obs.repo
 require_fixed "repo_gpgcheck=1" mkosi.resources/particleos-base-obs.repo
+require_fixed "mkosi.resources/particleos-base-obs.repo:/etc/yum.repos.d/particleos-base-obs.repo" \
+    mkosi.conf.d/particleos-obs-repo.conf
+require_fixed "mkosi.resources/particleos-obs.repo:/etc/yum.repos.d/particleos-obs.repo" \
+    mkosi.conf.d/particleos-obs-repo.conf
+if find mkosi.images -path '*/mkosi.conf.d/*' -type f -print | grep -q .; then
+    fail "role images cannot configure top-level SandboxTrees repository mounts"
+fi
 require_fixed "excludepkgs=ipe-policy" mkosi.profiles/obs-repos/mkosi.conf.d/fedora/mkosi.conf.d/44.repo
 for base_package_meta in \
         .obs/hardened_malloc-meta.example.xml \
@@ -424,6 +434,11 @@ web_preset="$web_extra/usr/lib/systemd/system-preset/20-particleos-webserver.pre
 web_tmpfiles="$web_extra/usr/lib/tmpfiles.d/particleos-webserver.conf"
 base_firewall=mkosi.extra/usr/lib/particleos/nftables.conf
 web_firewall="$web_extra/usr/lib/particleos/nftables-role.nft"
+mail_extra=mkosi.images/mailserver/mkosi.extra
+mail_firewall="$mail_extra/usr/lib/particleos/nftables-role.nft"
+mail_preset="$mail_extra/usr/lib/systemd/system-preset/20-particleos-mailserver.preset"
+mail_dropin="$mail_extra/usr/lib/systemd/system/stalwart.service.d/40-particleos-hardening.conf"
+mail_readme="$mail_extra/usr/share/doc/particleos/stalwart/README"
 require_fixed "authenticator = webroot" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "webroot-path = /var/www/html" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "required-profile = shortlived" $web_extra/usr/lib/particleos/certbot/cli.ini
@@ -458,6 +473,20 @@ require_fixed "meter ssh4" "$base_firewall"
 require_fixed "udp dport 443 ct state new" "$web_firewall"
 require_fixed "net.netfilter.nf_conntrack_max = 32768" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "meta skuid certbot tcp dport { 80, 443 } ct state new limit rate 8/second burst 16 packets accept" "$web_firewall"
+require_fixed "tcp dport { 25, 443, 465, 993, 995, 4190 } ct state new accept" "$mail_firewall"
+require_fixed "add @mail_tcp_conn4 { ip saddr ct count over 64 }" "$mail_firewall"
+require_fixed "ct count over 2048" "$mail_firewall"
+require_fixed "meter mail_tcp4" "$mail_firewall"
+require_fixed "meta skuid stalwart tcp dport 25 ct state new limit rate 64/second burst 128 packets accept" "$mail_firewall"
+require_fixed "meta skuid stalwart tcp dport 443 ct state new limit rate 8/second burst 16 packets accept" "$mail_firewall"
+reject_fixed "dport 8080" "$mail_firewall"
+reject_fixed "dport { 110, 143, 587" "$mail_firewall"
+require_fixed "disable stalwart.service" "$mail_preset"
+require_fixed "Requires=nftables.service particleos-module-lockdown.service" "$mail_dropin"
+require_fixed "After=nftables.service particleos-module-lockdown.service" "$mail_dropin"
+require_fixed "StartLimitIntervalSec=5min" "$mail_dropin"
+require_fixed "PostgreSQL" "$mail_readme"
+require_fixed "localhost:8080" "$mail_readme"
 require_fixed "meta skuid systemd-resolve ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 853 accept" "$base_firewall"
 require_fixed "meta skuid systemd-resolve ip6 daddr { 2606:4700:4700::1111, 2606:4700:4700::1001 } tcp dport 853 accept" "$base_firewall"
 require_fixed "meta skuid chrony tcp dport 4460 accept" "$base_firewall"
@@ -498,18 +527,16 @@ require_fixed ".init_t .http_port_t (tcp_socket (name_connect))" \
     "$web_health_policy"
 require_fixed 'oifname "lo" accept' "$base_firewall"
 
-for closed_role in mailserver dnsserver; do
-    closed_firewall="mkosi.images/$closed_role/mkosi.extra/usr/lib/particleos/nftables-role.nft"
-    require_fixed "all role ingress and egress remains closed." "$closed_firewall"
-    reject_fixed " accept" "$closed_firewall"
-done
-if grep -Fq 'meta l4proto { tcp, udp } accept' "$base_firewall" "$web_firewall"; then
+closed_firewall=mkosi.images/dnsserver/mkosi.extra/usr/lib/particleos/nftables-role.nft
+require_fixed "all role ingress and egress remains closed." "$closed_firewall"
+reject_fixed " accept" "$closed_firewall"
+if grep -Fq 'meta l4proto { tcp, udp } accept' "$base_firewall" "$web_firewall" "$mail_firewall"; then
     fail "raw prerouting must not admit every TCP and UDP tuple"
 fi
-if grep -Eq 'meta skuid.*nginx' "$base_firewall" "$web_firewall"; then
+if grep -Eq 'meta skuid.*nginx' "$base_firewall" "$web_firewall" "$mail_firewall"; then
     fail "nginx must not be authorized to create new outbound connections"
 fi
-if grep -Eq 'meta skuid[[:space:]]+root' "$base_firewall" "$web_firewall"; then
+if grep -Eq 'meta skuid[[:space:]]+root' "$base_firewall" "$web_firewall" "$mail_firewall"; then
     fail "generic root processes must not be authorized to create new outbound connections"
 fi
 if grep -Eq 'systemd-resolve.*(udp|tcp)[[:space:]]+dport[[:space:]]+53' "$base_firewall"; then

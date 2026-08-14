@@ -1,0 +1,23 @@
+ParticleOS Stalwart provisioning
+================================
+
+Stalwart is installed but disabled by default. Before enabling it:
+
+1. Provision a PostgreSQL database and role. The immutable package default
+   connects to a local server on 127.0.0.1:5432. If a remote database is used,
+   enable TLS with valid certificate verification, change config.json, and add
+   a destination-specific nftables egress rule for that database.
+2. Set STALWART_DB_PASSWORD in /etc/stalwart/stalwart.env with mode 0600.
+3. Use STALWART_RECOVERY_ADMIN only for initial recovery access, then remove
+   it immediately after creating a permanent administrator.
+4. Complete bootstrap through a console or an SSH tunnel to localhost:8080.
+   Port 8080 is intentionally never admitted by the public firewall.
+5. Configure the production hostname, TLS certificates, Ed25519 DKIM keys,
+   domains, and abuse controls before enabling public service.
+6. Enable the service with `run0 systemctl enable --now stalwart.service`.
+
+The public firewall admits TCP ports 25, 443, 465, 993, 995, and 4190. It does
+not admit plaintext submission/IMAP/POP3 ports 587, 143, or 110. Stalwart may
+create outbound TCP connections only to SMTP port 25 and HTTPS port 443. The
+system resolver remains the only DNS path and validates DNSSEC over Cloudflare
+DNS over TLS.

@@ -1,12 +1,12 @@
 # Security model
 
 This document describes the shared security properties of the ParticleOS
-server images and the production webserver role. It is a deployment model, not
+server images and the webserver and mailserver roles. It is a deployment model, not
 a claim that these Fedora-derived images are GrapheneOS or provide Android's
-security architecture. Mailserver and DNS server are dormant configuration
-placeholders with empty package payloads and closed role-specific network
-chains. Mail is reserved for a future project-provided Stalwart package; DNS is
-empty. Neither is a current OBS build target.
+security architecture. The mailserver contains the project-provided,
+PostgreSQL-only Stalwart RPM but keeps it disabled until deployment-specific
+secrets and policy are provisioned. DNS is an empty configuration placeholder
+and is not a current OBS image-build target.
 
 Reference revisions are pinned in [../NOTICE](../NOTICE).
 
@@ -95,6 +95,7 @@ therefore explicit lower-layer trust dependencies.
 | SSH | Ed25519 keys only, ML-KEM hybrid key exchange, no passwords/root/forwarding, source allowlist and rate limit | GrapheneOS infrastructure |
 | nginx (webserver) | sandboxed service, bounded journal logging, HTTP/3, request/admission bounds, modern TLS, strict headers, no tokens or autoindex | GrapheneOS infrastructure and grapheneos.org |
 | Certificates (webserver) | non-root Certbot webroot HTTP-01, required short-lived ACME profile, private state, fixed validation/reload boundary | GrapheneOS infrastructure plus Certbot |
+| Stalwart (mailserver) | PostgreSQL-only feature set, dedicated account, restrictive systemd sandbox, disabled before provisioning, bounded ingress and egress | Stalwart upstream plus GrapheneOS infrastructure principles |
 | Services | capability bounds, namespaces, read-only filesystem, syscall/address-family restrictions, OOM policy | GrapheneOS infrastructure |
 | Privilege elevation | systemd run0, isolated transient service, polkit authentication, no setuid sudo/mount/umount | systemd |
 
@@ -243,7 +244,8 @@ receives access to the underlying Varlink endpoint from this policy.
 The nftables service loads the complete shared and selected-role policy before
 the network is configured. The SSH socket and chrony require the firewall and
 module-lockdown services; the webserver adds the same requirements to nginx and
-Certbot renewal, so failure is closed.
+Certbot renewal, and the mailserver adds them to Stalwart, so failure is
+closed.
 The nftables loader and chronyd enter Fedora's dedicated `iptables_t` and
 `chronyd_t` SELinux domains. `NoNewPrivileges=yes` is therefore deliberately
 not applied to those units because it prevents these security-domain
@@ -264,17 +266,21 @@ Shared inbound policy permits:
 - in the webserver role only, new TCP connections to ports 80 and 443 and QUIC
   on UDP 443 with global and source-keyed admission limits, plus per-source and
   global concurrent TCP connection ceilings below nginx's worker capacity;
+- in the mailserver role only, new TCP connections to SMTP 25, HTTPS 443,
+  implicit-TLS submission/IMAP/POP3 on 465/993/995, and ManageSieve STARTTLS on
+  4190 with the same layered admission and concurrency bounds; bootstrap HTTP
+  8080 and legacy plaintext mail ports remain closed;
 - new TCP connections to port 22 only from the mutable IPv4 or IPv6
   administrator sets, with a much lower rate limit.
 
-
-The dormant mail and DNS placeholders add no public ingress and select no
-service packages. Forwarding is denied. Strict FIB checks implement
+The dormant DNS placeholder adds no public ingress and selects no service
+packages. Forwarding is denied. Strict FIB checks implement
 reverse-path filtering for both address families and reject weak-host traffic.
 
 Outbound policy first permits established replies. systemd-network can create
-only DHCP client flows, chrony only NTP/UDP 123 and NTS-KE/TCP 4460 flows, and
-web-role Certbot only rate-limited TCP/80 and TCP/443 flows. systemd-resolved
+only DHCP client flows, chrony only NTP/UDP 123 and NTS-KE/TCP 4460 flows,
+web-role Certbot only rate-limited TCP/80 and TCP/443 flows, and mail-role
+Stalwart only rate-limited SMTP/TCP 25 and HTTPS/TCP 443 flows. systemd-resolved
 can connect only to Cloudflare's two IPv4 and two IPv6 anycast endpoints on
 TCP/853; UDP/TCP port 53 egress is absent. nginx and generic root processes
 cannot initiate a connection. systemd's dynamic nftables integration grants
@@ -356,6 +362,15 @@ The webserver role additionally permits:
 - `/var/lib/particleos/nginx/conf.d`;
 - `/etc/letsencrypt` (dedicated Certbot ownership with Fedora certificate labels).
 
+The mailserver role additionally permits Stalwart's package-managed mutable
+configuration in `/etc/stalwart`, state in `/var/lib/stalwart`, and bounded
+journal/file logging state in `/var/log/stalwart`. The environment file is
+root-only mode 0600; it contains no packaged secret. Stalwart starts under its
+non-login account and remains disabled until PostgreSQL and permanent
+credentials are ready. The default database endpoint is loopback. A remote
+database requires strict TLS and an explicit destination-specific firewall
+rule rather than generic database egress.
+
 Configuration under `/usr/lib/particleos` changes only through a new signed
 image. Certbot state and TLS private keys are owned by the non-login `certbot`
 account. nginx's root master reads certificates during start/reload; workers do
@@ -394,9 +409,27 @@ The renewal drop-in clears Fedora's inherited `/etc/sysconfig/certbot`
 environment file and replaces the vendor command, leaving the immutable
 `cli.ini` plus per-certificate renewal state as the only Certbot inputs.
 
+## Mailserver role scope
+
+The Stalwart build excludes embedded, alternative SQL, cloud-storage,
+distributed-coordination, and enterprise backends and retains only PostgreSQL.
+Its systemd unit applies a private runtime, device and mount isolation,
+read-only system paths, no-new-privileges, a `CAP_NET_BIND_SERVICE`-only
+capability bound, native system-call filtering, address-family restrictions,
+and executable-memory denial. ParticleOS additionally orders it after the
+firewall and irreversible module lockdown.
+
+Stalwart's bootstrap/recovery HTTP listener on port 8080 is intentionally
+reachable only through localhost. Operators provision it through the console
+or an SSH tunnel, remove the temporary recovery credential immediately, use
+Ed25519 DKIM keys, and configure the production hostname and TLS before
+enabling the service. The image does not bundle PostgreSQL or any database
+credential. This keeps the generic artifact minimal and prevents a newly
+booted image from becoming a remotely configurable mail server.
+
 ## Release verification
 
-A webserver release is not complete until the exact OBS artifact has been:
+A role release is not complete until the exact OBS artifact has been:
 
 1. built from an immutable reviewed commit;
 2. checked against every OBS project-signed per-artifact SHA-256 file and
@@ -411,6 +444,13 @@ A webserver release is not complete until the exact OBS artifact has been:
    provisioning, recovery access, Certbot staging issuance, renewal deploy
    reload, ptrace/user-namespace denial, zero core-dump artifacts, and enforced
    SELinux socket denials.
+
+For a mailserver release, verification additionally checks the exact Stalwart
+package version and signature, disabled-by-default state, systemd sandbox,
+closed bootstrap and plaintext ports, permitted mail ports, and absence of
+packaged secrets. A production deployment test then supplies a disposable
+PostgreSQL database and credentials before exercising protocol and delivery
+behavior; the generic image test does not invent deployment credentials.
 
 Static repository validation cannot prove the behavior of a Fedora kernel,
 firmware, OBS worker, generated UKI, TPM implementation, or target hardware.
