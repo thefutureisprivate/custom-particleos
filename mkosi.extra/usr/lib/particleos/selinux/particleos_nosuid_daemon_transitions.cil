@@ -32,7 +32,8 @@
   (allow .sshd_session_t .unconfined_t (process2 (nosuid_transition)))
 
   ; run0 authenticates through polkit's private PAM helper. Fedora already
-  ; defines policykit_auth_t -> chkpwd_t and permits the corresponding
-  ; no-new-privileges transition; preserve that confined password check from
-  ; the nosuid /usr mount as well.
-  (allow .policykit_auth_t .chkpwd_t (process2 (nosuid_transition))))
+  ; defines the confined chkpwd transition both for that helper and for PID 1's
+  ; transient-service PAM account check. Preserve those same password checks
+  ; from the nosuid /usr mount.
+  (allow .policykit_auth_t .chkpwd_t (process2 (nosuid_transition)))
+  (allow .init_t .chkpwd_t (process2 (nosuid_transition))))
