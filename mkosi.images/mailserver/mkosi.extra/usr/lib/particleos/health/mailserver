@@ -2,6 +2,25 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -euo pipefail
 
+tcp_connect() {
+    local address=$1
+    local port=$2
+
+    exec 3<>"/dev/tcp/$address/$port"
+    exec 3>&- 3<&-
+}
+
+webui_responds() {
+    local address=$1
+    local status
+
+    exec 3<>"/dev/tcp/$address/8080"
+    printf 'HEAD /admin HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
+    IFS= read -r status <&3 || true
+    exec 3>&- 3<&-
+    [[ $status =~ ^HTTP/[0-9.]+\ [23][0-9][0-9] ]]
+}
+
 database_ready=false
 for ((attempt = 0; attempt < 60; attempt++)); do
     result="$(/usr/bin/psql --no-password --no-psqlrc \
@@ -32,16 +51,32 @@ if [[ $dns_ready != true ]]; then
     exit 1
 fi
 
+listeners_ready=false
+for ((attempt = 0; attempt < 60; attempt++)); do
+    listeners_ready=true
+    for address in 127.0.0.1 ::1; do
+        for port in 25 443 465 993; do
+            if ! tcp_connect "$address" "$port" 2>/dev/null; then
+                listeners_ready=false
+            fi
+        done
+    done
+    if [[ $listeners_ready == true ]]; then
+        break
+    fi
+    sleep 1
+done
+if [[ $listeners_ready != true ]]; then
+    echo 'Stalwart did not bind every required public listener on IPv4 and IPv6' >&2
+    exit 1
+fi
+
 webui_ready=false
 for ((attempt = 0; attempt < 60; attempt++)); do
-    if exec 3<>/dev/tcp/127.0.0.1/8080; then
-        printf 'HEAD /admin HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
-        IFS= read -r status <&3 || true
-        exec 3>&- 3<&-
-        if [[ $status =~ ^HTTP/[0-9.]+\ [23][0-9][0-9] ]]; then
-            webui_ready=true
-            break
-        fi
+    if webui_responds 127.0.0.1 2>/dev/null &&
+            webui_responds ::1 2>/dev/null; then
+        webui_ready=true
+        break
     fi
     sleep 1
 done
@@ -49,3 +84,12 @@ if [[ $webui_ready != true ]]; then
     echo 'Stalwart did not serve its packaged WebUI on the loopback bootstrap listener' >&2
     exit 1
 fi
+
+for address in 127.0.0.1 ::1; do
+    for port in 110 143 587 995 4190; do
+        if tcp_connect "$address" "$port" 2>/dev/null; then
+            echo "forbidden plaintext, POP, or ManageSieve listener is active on $address:$port" >&2
+            exit 1
+        fi
+    done
+done

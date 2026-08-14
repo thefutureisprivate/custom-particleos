@@ -618,8 +618,11 @@ require_fixed "IPAddressAllow=localhost" "$mail_health_unit"
 require_fixed "IPAddressDeny=any" "$mail_health_unit"
 require_fixed "--host=/run/postgresql --username=stalwart --dbname=stalwart" "$mail_health_check"
 require_fixed "resolvectl --cache=no --legend=no query cloudflare.com" "$mail_health_check"
-require_fixed "/dev/tcp/127.0.0.1/8080" "$mail_health_check"
+require_fixed 'exec 3<>"/dev/tcp/$address/8080"' "$mail_health_check"
 require_fixed "HEAD /admin HTTP/1.1" "$mail_health_check"
+require_fixed "for address in 127.0.0.1 ::1" "$mail_health_check"
+require_fixed "for port in 25 443 465 993" "$mail_health_check"
+require_fixed "for port in 110 143 587 995 4190" "$mail_health_check"
 require_fixed 'oifname "lo" accept' "$base_firewall"
 
 closed_firewall=mkosi.images/dnsserver/mkosi.extra/usr/lib/particleos/nftables-role.nft

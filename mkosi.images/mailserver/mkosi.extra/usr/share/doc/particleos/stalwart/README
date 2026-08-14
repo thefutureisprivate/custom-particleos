@@ -16,8 +16,9 @@ application bootstrap as follows:
    TLS certificates, Ed25519 DKIM keys, domains, relay policy, and abuse
    controls before accepting production mail.
 3. Keep the local HTTP bootstrap listener available on loopback: the counted
-   update-health gate uses /admin to verify the OBS-packaged WebUI before
-   blessing a new OS slot.
+   update-health gate uses /admin to verify the OBS-packaged WebUI, confirms
+   every public listener on IPv4 and IPv6, and rejects plaintext, POP, and
+   ManageSieve listeners before blessing a new OS slot.
 
 The public firewall admits only TCP 25, 443, 465, and 993. POP3, ManageSieve,
 plaintext client protocols, PostgreSQL, and bootstrap TCP 8080 are closed.
