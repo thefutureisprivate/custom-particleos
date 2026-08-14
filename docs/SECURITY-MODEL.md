@@ -184,7 +184,9 @@ policy load. It clears the modprobe helper path and sets
 reduces post-boot kernel attack surface but means required hardware, storage,
 crypto, and network drivers must be available in the UKI/initrd or declared in
 `modules-load.d` before release. This includes `vfat`, which is needed to mount
-the EFI System Partition after switch-root.
+the EFI System Partition after switch-root, and the `nft_connlimit` and
+`nft_socket` expressions required by the firewall's connection ceilings and
+systemd-sysupdate cgroup matching.
 
 Yama scope 3 and the SELinux `deny_ptrace` boolean prohibit process attachment;
 scope 3 cannot be relaxed without rebooting. Unprivileged BPF and io_uring are

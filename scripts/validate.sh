@@ -512,8 +512,11 @@ if rg -n '/var/log/nginx' $web_extra/usr/lib/particleos/nginx $web_extra/usr/lib
     fail "nginx logs must use the bounded journal"
 fi
 require_fixed "kernel.modules_disabled=1"     mkosi.extra/usr/lib/systemd/system/particleos-module-lockdown.service
-grep -Fxq vfat mkosi.extra/usr/lib/modules-load.d/particleos.conf ||
-    fail "the ESP vfat driver must be preloaded before module lockdown"
+modules_load=mkosi.extra/usr/lib/modules-load.d/particleos.conf
+for module in nft_connlimit nft_socket vfat; do
+    grep -Fxq "$module" "$modules_load" ||
+        fail "$module must be preloaded before module lockdown"
+done
 require_fixed "SELINUX=enforcing" mkosi.extra/etc/selinux/config
 require_fixed "Z /var/www/html - - - -" "$web_tmpfiles"
 require_fixed "Z /etc/letsencrypt - certbot certbot -" "$web_tmpfiles"
