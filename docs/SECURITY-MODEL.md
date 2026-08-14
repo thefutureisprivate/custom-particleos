@@ -168,6 +168,12 @@ every daemon shipped here. ParticleOS grants only the missing `init_t`
 transitions to `udev_t`, `system_dbusd_t`, `ldconfig_t`, `iptables_t`,
 `sshd_keygen_t`, and `chronyd_t`; it does not grant the related
 `nnp_transition` permission or any runtime-file access to `init_t`.
+The same narrowly scoped policy preserves Fedora's chained transitions from
+`udev_t` to `systemd_sysctl_t`, `sshd_keygen_t` to `ssh_keygen_t`,
+`systemd_homed_t` to `systemd_homework_t`, and `getty_t` to `local_login_t`.
+They are required respectively for device sysctls, the Ed25519 SSH host key,
+the first-boot homed administrator, and console authentication; no unrelated
+source domain receives permission to enter those targets.
 Fedora also labels systemd's udev compatibility launcher symlink `lib_t`
 instead of `udev_exec_t`. The host unit therefore executes its correctly
 labelled `/usr/bin/udevadm` target directly while retaining the

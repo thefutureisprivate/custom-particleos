@@ -629,6 +629,10 @@ require_fixed ".init_t .ldconfig_t (process2 (nosuid_transition))" "$nosuid_tran
 require_fixed ".init_t .iptables_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .sshd_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .chronyd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".udev_t .systemd_sysctl_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".sshd_keygen_t .ssh_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".systemd_homed_t .systemd_homework_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".getty_t .local_login_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 reject_fixed "nnp_transition" "$nosuid_transition_policy"
 require_fixed ".local_login_t .systemd_userdbd_runtime_t" \
     mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil

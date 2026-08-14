@@ -11,4 +11,12 @@
   (allow .init_t .ldconfig_t (process2 (nosuid_transition)))
   (allow .init_t .iptables_t (process2 (nosuid_transition)))
   (allow .init_t .sshd_keygen_t (process2 (nosuid_transition)))
-  (allow .init_t .chronyd_t (process2 (nosuid_transition))))
+  (allow .init_t .chronyd_t (process2 (nosuid_transition)))
+
+  ; Preserve the existing Fedora transitions for helpers launched by the
+  ; confined boot services once /usr is mounted nosuid. These are chained
+  ; transitions, so granting init_t access alone is insufficient.
+  (allow .udev_t .systemd_sysctl_t (process2 (nosuid_transition)))
+  (allow .sshd_keygen_t .ssh_keygen_t (process2 (nosuid_transition)))
+  (allow .systemd_homed_t .systemd_homework_t (process2 (nosuid_transition)))
+  (allow .getty_t .local_login_t (process2 (nosuid_transition))))
