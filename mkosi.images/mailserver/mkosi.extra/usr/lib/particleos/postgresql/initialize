@@ -7,8 +7,14 @@ pgdata=/var/lib/pgsql/data
 marker=$pgdata/.particleos-initialized
 
 if [[ ! -f $pgdata/PG_VERSION ]]; then
-    export PGSETUP_INITDB_OPTIONS='--data-checksums --auth-local=peer --auth-host=reject'
-    /usr/bin/postgresql-setup --initdb --unit postgresql
+    # Run initdb directly as the service's unprivileged postgres user. Fedora's
+    # postgresql-setup wrapper also loads upgrade metadata which is not needed
+    # for first-boot setup.
+    /usr/bin/initdb \
+        --pgdata="$pgdata" \
+        --data-checksums \
+        --auth-local=peer \
+        --auth-host=reject
 fi
 
 [[ -f $pgdata/PG_VERSION ]]
