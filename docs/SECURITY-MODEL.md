@@ -443,12 +443,16 @@ The Stalwart WebUI is a checksum-pinned release asset inside the signed RPM and
 dm-verity-protected `/usr` payload. The patched server accepts only its exact
 `file:///usr/share/stalwart/webui.zip` URL, so registry updates cannot recreate
 the upstream first-boot HTTPS downloader. POP3 and ManageSieve listeners are
-absent from the initial registry, their ports are absent from nftables, and the
-dedicated `stalwart_t` SELinux domain receives neither port-type permission.
-That domain can read only labelled configuration/WebUI content, manage labelled
-state, log, runtime, and private-temporary trees, connect to PostgreSQL only by
-its Unix socket, resolve through the host DNS path, and use only the selected
-SMTP, IMAP, and HTTP port types.
+absent from the initial registry and their ports are absent from nftables. The
+mail boot-health gate also rejects unexpected POP3, plaintext IMAP/submission,
+or ManageSieve listeners. Fedora assigns IMAPS TCP 993 to its historical
+`pop_port_t`, so the dedicated `stalwart_t` domain necessarily has that SELinux
+port-type permission; the registry, health gate, and firewall prevent it from
+becoming a POP service. The domain can otherwise read only labelled
+configuration/WebUI content, manage labelled state, log, runtime, and
+private-temporary trees, connect to PostgreSQL only by its Unix socket, resolve
+through the host DNS path, and use only the selected SMTP, IMAP, and HTTP port
+types.
 
 ## Release verification
 
