@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -euo pipefail
 
-/usr/bin/nginx -e stderr -t -q -c /usr/lib/particleos/nginx/nginx.conf
-
-# A successful configuration test does not prove the service is accepting
-# requests. Probe only the local clear-text listener: TLS is intentionally not
-# provisioned until the operator supplies a domain and obtains a certificate.
+# nginx.service validates the configuration in ExecStartPre with the same
+# capabilities and resource limits as the production master process. Repeating
+# that test here would require this otherwise unprivileged health check to bind
+# privileged listeners. Probe only the local clear-text listener instead: TLS
+# is intentionally not provisioned until the operator supplies a domain and
+# obtains a certificate.
 for ((attempt = 0; attempt < 30; attempt++)); do
     if exec 3<>/dev/tcp/127.0.0.1/80; then
         printf 'HEAD / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3

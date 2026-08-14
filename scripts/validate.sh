@@ -458,7 +458,7 @@ require_fixed "FailureAction=reboot" "$web_health_unit"
 require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" "$web_health_unit"
 require_fixed "RequiredBy=boot-complete.target" "$web_health_unit"
 require_fixed "enable particleos-webserver-health.service" "$web_preset"
-require_fixed "nginx -e stderr -t -q" "$web_health_check"
+reject_fixed "nginx -e stderr -t -q" "$web_health_check"
 require_fixed "/dev/tcp/127.0.0.1/80" "$web_health_check"
 require_fixed "HTTP/*" "$web_health_check"
 
