@@ -24,13 +24,19 @@ fi
 
 # PostgreSQL includes this file from the generated main configuration. Keep the
 # network boundary in an independently auditable, appliance-owned fragment.
-install -d -m 0700 "$pgdata/conf.d"
+mkdir -p "$pgdata/conf.d"
+chmod 0700 "$pgdata/conf.d"
 if ! grep -Fqx "include_dir = 'conf.d'" "$pgdata/postgresql.conf"; then
     printf "\ninclude_dir = 'conf.d'\n" >>"$pgdata/postgresql.conf"
 fi
 
-install -m 0600 /usr/lib/particleos/postgresql/particleos.conf \
-    "$pgdata/conf.d/particleos.conf"
-install -m 0600 /usr/lib/particleos/postgresql/pg_hba.conf \
-    "$pgdata/pg_hba.conf"
-install -m 0600 /dev/null "$marker"
+# These targets inherit postgresql_db_t from PGDATA. Do not use coreutils
+# install here: its SELinux context adjustment is both unnecessary and denied
+# to the deliberately confined postgresql_t setup process.
+cat /usr/lib/particleos/postgresql/particleos.conf \
+    >"$pgdata/conf.d/particleos.conf"
+cat /usr/lib/particleos/postgresql/pg_hba.conf \
+    >"$pgdata/pg_hba.conf"
+chmod 0600 "$pgdata/conf.d/particleos.conf" "$pgdata/pg_hba.conf"
+: >"$marker"
+chmod 0600 "$marker"
