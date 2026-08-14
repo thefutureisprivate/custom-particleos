@@ -457,10 +457,21 @@ require_fixed "Before=boot-complete.target" "$web_health_unit"
 require_fixed "FailureAction=reboot" "$web_health_unit"
 require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" "$web_health_unit"
 require_fixed "RequiredBy=boot-complete.target" "$web_health_unit"
+require_fixed "CapabilityBoundingSet=" "$web_health_unit"
+require_fixed "IPAddressAllow=localhost" "$web_health_unit"
+require_fixed "IPAddressDeny=any" "$web_health_unit"
 require_fixed "enable particleos-webserver-health.service" "$web_preset"
 reject_fixed "nginx -e stderr -t -q" "$web_health_check"
 require_fixed "/dev/tcp/127.0.0.1/80" "$web_health_check"
 require_fixed "HTTP/*" "$web_health_check"
+web_health_policy="$web_extra/usr/lib/particleos/selinux/particleos_web_health.cil"
+require_fixed "/usr/lib/particleos/selinux/particleos_web_health.cil" \
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed 'if [[ $IMAGE_ID == ParticleOS-Webserver ]]' \
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed ".init_t .http_port_t (tcp_socket (name_connect))" \
+    "$web_health_policy"
+require_fixed 'oifname "lo" accept' "$base_firewall"
 
 for closed_role in mailserver dnsserver; do
     closed_firewall="mkosi.images/$closed_role/mkosi.extra/usr/lib/particleos/nftables-role.nft"

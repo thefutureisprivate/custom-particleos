@@ -1,0 +1,9 @@
+; SPDX-License-Identifier: LGPL-2.1-or-later
+
+; The counted-boot health service runs directly under PID 1's init_t domain
+; and must connect to nginx on 127.0.0.1:80 before the UKI is blessed. Permit
+; only the missing SELinux port-name check. The unit's IPAddressAllow=localhost
+; sandbox and nftables' loopback-only path independently prevent this grant
+; from authorizing an external HTTP connection.
+(block particleos_web_health
+  (allow .init_t .http_port_t (tcp_socket (name_connect))))

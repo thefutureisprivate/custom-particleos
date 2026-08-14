@@ -61,6 +61,12 @@ if ! grep -qx 'handle-unknown=deny' /etc/selinux/semanage.conf; then
 fi
 
 setsebool -P deny_ptrace=on
+selinux_role_modules=()
+if [[ $IMAGE_ID == ParticleOS-Webserver ]]; then
+    selinux_role_modules+=(
+        /usr/lib/particleos/selinux/particleos_web_health.cil
+    )
+fi
 semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_harden_userns.cil \
     /usr/lib/particleos/selinux/secureblue_socket_utils.cil \
@@ -71,7 +77,8 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil \
     /usr/lib/particleos/selinux/particleos_runtime_symlinks.cil \
     /usr/lib/particleos/selinux/particleos_pcr_measurement.cil \
-    /usr/lib/particleos/selinux/particleos_homed_login.cil
+    /usr/lib/particleos/selinux/particleos_homed_login.cil \
+    "${selinux_role_modules[@]}"
 
 # /etc/selinux is an immutable factory symlink. systemd-tmpfiles consults the
 # policy file contexts when it verifies that link during boot; without this
