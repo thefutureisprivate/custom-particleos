@@ -535,6 +535,7 @@ require_fixed "After=nftables.service particleos-module-lockdown.service postgre
 require_fixed "StartLimitIntervalSec=5min" "$mail_dropin"
 require_fixed "PostgreSQL" "$mail_readme"
 require_fixed "localhost:8080" "$mail_readme"
+require_fixed "127.0.0.54:53" "$mail_readme"
 require_fixed "There is no database password or environment file." "$mail_readme"
 require_fixed "systemd-resolved" "$mail_readme"
 reject_fixed "STALWART_DB_PASSWORD" "$mail_readme"

@@ -316,9 +316,13 @@ The resolver ignores DHCPv4, DHCPv6, and IPv6 RA DNS data and installs a global
 `DNSSEC=yes` are strict rather than opportunistic. A blocked DoT path or failed
 certificate/DNSSEC validation therefore causes resolution failure; the system
 does not downgrade to plaintext or an unvalidated provider resolver. Stalwart
-declares `systemd-resolved.service` as a hard unit dependency, has no external
-port-53 firewall path, and the counted-boot mail health gate fails if a signed
-name cannot be resolved through this path.
+declares `systemd-resolved.service` as a hard unit dependency and has no
+external port-53 firewall path. Its resolver uses resolved's loopback-only
+`127.0.0.54:53` TCP proxy, which preserves DNSSEC records and translates the
+upstream transport to the same authenticated Cloudflare DoT path; Stalwart
+validates those records itself for DANE. Ordinary applications remain on the
+full `127.0.0.53` validating stub. The counted-boot mail health gate fails if a
+signed name cannot be resolved through this path.
 
 ## Administration
 

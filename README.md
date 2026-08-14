@@ -93,9 +93,11 @@ admits only SMTP 25, HTTPS 443, implicit-TLS submission 465, and implicit-TLS
 IMAP 993; POP3, ManageSieve, plaintext client mail ports, PostgreSQL, and
 bootstrap HTTP 8080 remain closed. Stalwart egress is limited to SMTP 25 and
 HTTPS 443, with resolver traffic confined to the loopback systemd-resolved
-stub. A dedicated SELinux domain independently enforces the selected ports,
-local database socket, and labelled file access. Provisioning instructions are
-installed at `/usr/share/doc/particleos/stalwart/README`.
+TCP proxy stub so Stalwart can validate preserved DNSSEC records for DANE over
+the host's authenticated Cloudflare DoT path. A dedicated SELinux domain
+independently enforces the selected ports, local database socket, and labelled
+file access. Provisioning instructions are installed at
+`/usr/share/doc/particleos/stalwart/README`.
 
 See [docs/SECURITY-MODEL.md](./docs/SECURITY-MODEL.md) for trust boundaries,
 GrapheneOS hardening coverage, and deliberate exclusions.

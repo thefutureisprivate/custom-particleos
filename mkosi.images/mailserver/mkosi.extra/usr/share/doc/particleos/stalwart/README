@@ -24,9 +24,11 @@ The public firewall admits only TCP 25, 443, 465, and 993. POP3, ManageSieve,
 plaintext client protocols, PostgreSQL, and bootstrap TCP 8080 are closed.
 Stalwart may create external connections only to SMTP TCP 25 and HTTPS TCP 443.
 DNS packets are limited to loopback and therefore must pass through
-systemd-resolved. resolved authenticates Cloudflare over DNS-over-TLS and
-performs strict local DNSSEC validation; blocked DoT or failed validation makes
-mail resolution fail closed.
+systemd-resolved. Ordinary OS lookups use resolved's full validating stub.
+Stalwart uses resolved's loopback-only `127.0.0.54:53` TCP proxy stub so DNS messages still
+cross authenticated Cloudflare DNS-over-TLS while Stalwart validates the
+preserved DNSSEC records locally for DANE. Blocked DoT or failed validation
+makes mail resolution fail closed.
 
 The WebUI is a checksum-pinned RPM payload in immutable /usr. Stalwart rejects
 every application-bundle URL except file:///usr/share/stalwart/webui.zip, so
