@@ -308,9 +308,14 @@ require_fixed "Refusing unsafe checksum path" "$checksum_hook"
 require_fixed "rm -f --" "$checksum_hook"
 xmllint --noout .obs/ipe-policy-meta.example.xml
 xmllint --noout .obs/project-meta.example.xml
+xmllint --noout .obs/hardened_malloc-meta.example.xml
+xmllint --noout .obs/no_rlimit_as-meta.example.xml
 require_fixed "project: home:thefutureisprivate" .obs/workflows.example.yml
 require_fixed '<path project="Fedora:44" repository="update"/>' .obs/project-meta.example.xml
 require_fixed '<path project="system:systemd" repository="Fedora_44"/>' .obs/project-meta.example.xml
+require_fixed '<repository name="particleos_base_Fedora_44">' .obs/project-meta.example.xml
+require_fixed '<path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>' \
+    .obs/project-meta.example.xml
 require_fixed "baseurl=https://download.opensuse.org/repositories/system:/systemd/Fedora_44/" mkosi.profiles/obs-repos/mkosi.conf.d/fedora/mkosi.conf.d/44.repo
 if rg -n '<path project="Fedora:44" repository="standard"/>' .obs/project-meta.example.xml; then
     fail "OBS must use Fedora 44 updates rather than the frozen release repository"
@@ -342,8 +347,24 @@ require_fixed "priority=1" mkosi.resources/particleos-obs.repo
 require_fixed "includepkgs=hardened_malloc,ipe-policy,no_rlimit_as" mkosi.resources/particleos-obs.repo
 require_fixed "skip_if_unavailable=False" mkosi.resources/particleos-obs.repo
 require_fixed "repo_gpgcheck=1" mkosi.resources/particleos-obs.repo
+require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/particleos_base_Fedora_44/" \
+    mkosi.resources/particleos-base-obs.repo
+require_fixed "priority=1" mkosi.resources/particleos-base-obs.repo
+require_fixed "includepkgs=hardened_malloc,ipe-policy,no_rlimit_as" \
+    mkosi.resources/particleos-base-obs.repo
+require_fixed "skip_if_unavailable=False" mkosi.resources/particleos-base-obs.repo
+require_fixed "repo_gpgcheck=1" mkosi.resources/particleos-base-obs.repo
 require_fixed "excludepkgs=ipe-policy" mkosi.profiles/obs-repos/mkosi.conf.d/fedora/mkosi.conf.d/44.repo
-require_fixed '<enable repository="Fedora_44" arch="x86_64"/>' .obs/ipe-policy-meta.example.xml
+for base_package_meta in \
+        .obs/hardened_malloc-meta.example.xml \
+        .obs/ipe-policy-meta.example.xml \
+        .obs/no_rlimit_as-meta.example.xml; do
+    require_fixed '<enable repository="particleos_base_Fedora_44" arch="x86_64"/>' \
+        "$base_package_meta"
+    if rg -n '<enable repository="Fedora_44"' "$base_package_meta"; then
+        fail "$base_package_meta must not rebuild ParticleOS base packages in the Stalwart repository"
+    fi
+done
 printf '%s  %s\n' \
     5fe4715ba5d0fb9abf18915ea38213c45240fe828a7aa52c574634a13484814c \
     mkosi.resources/particleos-obs-pubkey.gpg | sha256sum --check --status - ||

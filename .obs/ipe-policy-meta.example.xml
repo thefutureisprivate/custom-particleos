@@ -6,6 +6,6 @@
   </description>
   <build>
     <disable/>
-    <enable repository="Fedora_44" arch="x86_64"/>
+    <enable repository="particleos_base_Fedora_44" arch="x86_64"/>
   </build>
 </package>

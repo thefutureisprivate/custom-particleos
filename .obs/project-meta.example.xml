@@ -2,8 +2,18 @@
   <title/>
   <description/>
   <person userid="thefutureisprivate" role="maintainer"/>
+  <repository name="system_systemd_Fedora_44">
+    <path project="system:systemd" repository="Fedora_44"/>
+    <arch>x86_64</arch>
+  </repository>
+  <repository name="particleos_base_Fedora_44">
+    <path project="openSUSE:Tools" repository="Fedora_44"/>
+    <path project="system:systemd" repository="Fedora_44"/>
+    <path project="Fedora:44" repository="update"/>
+    <arch>x86_64</arch>
+  </repository>
   <repository name="fedora_44_images">
-    <path project="home:thefutureisprivate" repository="Fedora_44"/>
+    <path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>
     <path project="system:systemd" repository="Fedora_44"/>
     <path project="Fedora:44" repository="update"/>
     <arch>x86_64</arch>
