@@ -90,6 +90,15 @@ semodule -X 300 -i \
 # selinux_config_t, which prevents confined libselinux consumers from
 # resolving the policy location. Keep the target tree policy-labelled.
 selinux_local_contexts=/etc/selinux/targeted/contexts/files/file_contexts.local
+if [[ $IMAGE_ID == ParticleOS-Mailserver ]]; then
+    # The setup service uses NoNewPrivileges. Label its appliance-owned entry
+    # point with Fedora's PostgreSQL executable type so the complete one-shot,
+    # including its post-init configuration writes, runs in postgresql_t.
+    postgresql_initializer_context='/usr/lib/particleos/postgresql/initialize -- system_u:object_r:postgresql_exec_t:s0'
+    if ! grep -Fqx "$postgresql_initializer_context" "$selinux_local_contexts"; then
+        printf '%s\n' "$postgresql_initializer_context" >>"$selinux_local_contexts"
+    fi
+fi
 selinux_factory_link_context='/etc/selinux -l system_u:object_r:etc_t:s0'
 if ! grep -Fqx "$selinux_factory_link_context" "$selinux_local_contexts"; then
     printf '%s\n' "$selinux_factory_link_context" >>"$selinux_local_contexts"

@@ -544,6 +544,7 @@ require_fixed "IPAddressDeny=any" "$postgres_dropin"
 require_fixed "MemoryDenyWriteExecute=yes" "$postgres_dropin"
 require_fixed "User=postgres" "$postgres_setup_unit"
 require_fixed "ConditionPathExists=!/var/lib/pgsql/data/.particleos-initialized" "$postgres_setup_unit"
+require_fixed "/usr/lib/particleos/postgresql/initialize -- system_u:object_r:postgresql_exec_t:s0" mkosi.scripts/particleos.postinst.chroot
 require_fixed "/usr/bin/initdb" "$postgres_setup"
 require_fixed "--data-checksums" "$postgres_setup"
 require_fixed "--auth-local=peer" "$postgres_setup"
