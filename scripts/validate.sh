@@ -639,6 +639,7 @@ require_fixed ".init_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_tr
 require_fixed ".local_login_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".sshd_t .sshd_session_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".sshd_session_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".policykit_auth_t .chkpwd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 reject_fixed "nnp_transition" "$nosuid_transition_policy"
 runtime_symlink_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_runtime_symlinks.cil
 require_fixed "/usr/lib/particleos/selinux/particleos_runtime_symlinks.cil" \
@@ -650,6 +651,14 @@ require_fixed "selinux_factory_link_context='/etc/selinux -l system_u:object_r:e
 require_fixed ".local_login_t .systemd_userdbd_runtime_t" \
     mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 require_fixed ".chkpwd_t .systemd_userdbd_runtime_t" \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
+require_fixed ".policykit_t .systemd_userdbd_runtime_t" \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
+require_fixed ".policykit_auth_t .systemd_userdbd_runtime_t" \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
+require_fixed ".policykit_auth_t .systemd_homed_t (dbus (send_msg))" \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
+require_fixed ".systemd_homed_t .policykit_auth_t (dbus (send_msg))" \
     mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 require_fixed "alg_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_alg_sockets.cil
 require_fixed "key_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil

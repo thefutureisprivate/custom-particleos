@@ -1,8 +1,16 @@
 ; SPDX-License-Identifier: LGPL-2.1-or-later
 
-; Fedora 44 local_login_t and the PAM password helper query systemd-userdbd's
-; Varlink endpoint while resolving systemd-homed users. Permit only reading
-; that socket inode.
+; Fedora 44 login, PAM password and polkit authentication domains query
+; systemd-userdbd's Varlink endpoint while resolving systemd-homed users.
+; The base policy permits opening and writing the socket but omits the inode
+; read permission required by the current userdb client.
 (block particleos_homed_login
   (allow .local_login_t .systemd_userdbd_runtime_t (sock_file (read)))
-  (allow .chkpwd_t .systemd_userdbd_runtime_t (sock_file (read))))
+  (allow .chkpwd_t .systemd_userdbd_runtime_t (sock_file (read)))
+  (allow .policykit_t .systemd_userdbd_runtime_t (sock_file (read)))
+  (allow .policykit_auth_t .systemd_userdbd_runtime_t (sock_file (read)))
+
+  ; pam_systemd_home in polkit's private authentication helper talks directly
+  ; to homed on the system bus. Grant the request and reply directions only.
+  (allow .policykit_auth_t .systemd_homed_t (dbus (send_msg)))
+  (allow .systemd_homed_t .policykit_auth_t (dbus (send_msg))))
