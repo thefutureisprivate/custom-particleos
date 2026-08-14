@@ -4,9 +4,10 @@ This document describes the shared security properties of the ParticleOS
 server images and the webserver and mailserver roles. It is a deployment model, not
 a claim that these Fedora-derived images are GrapheneOS or provide Android's
 security architecture. The mailserver contains the project-provided,
-PostgreSQL-only Stalwart RPM but keeps it disabled until deployment-specific
-secrets and policy are provisioned. DNS is an empty configuration placeholder
-and is not a current OBS image-build target.
+PostgreSQL-only Stalwart RPM plus a local Unix-socket-only PostgreSQL server;
+both are enabled with peer authentication and no database secret. The public
+DNS-server role is an empty configuration placeholder and is not a current OBS
+image-build target.
 
 Reference revisions are pinned in [../NOTICE](../NOTICE).
 
@@ -48,10 +49,12 @@ The shared base enables the update and conditional-reboot timers. New UKIs
 receive three attempts. During a counted boot,
 `systemd-boot-check-no-failures.service` blocks `boot-complete.target` if a
 unit failed; the webserver also requires a valid nginx configuration and a
-local HTTP response. A failed gate triggers a reboot without blessing that
-slot, so systemd-boot eventually selects the previous blessed UKI and A/B usr
-set. Both forced-reboot actions require the `LoaderBootCountPath` EFI variable;
-they cannot turn a normal, already blessed boot into a permanent reboot loop.
+local HTTP response. The mailserver requires a peer-authenticated PostgreSQL
+query, working strict DNS resolution, Stalwart, and a successful response from
+its packaged WebUI. A failed gate triggers a reboot without blessing that slot,
+so systemd-boot eventually selects the previous blessed UKI and A/B usr set.
+Both forced-reboot actions require the `LoaderBootCountPath` EFI variable; they
+cannot turn a normal, already blessed boot into a permanent reboot loop.
 This availability rollback does not provide cryptographic anti-rollback.
 
 The OBS project certificate and membership, source revision, Fedora package
@@ -95,7 +98,8 @@ therefore explicit lower-layer trust dependencies.
 | SSH | Ed25519 keys only, ML-KEM hybrid key exchange, no passwords/root/forwarding, source allowlist and rate limit | GrapheneOS infrastructure |
 | nginx (webserver) | sandboxed service, bounded journal logging, HTTP/3, request/admission bounds, modern TLS, strict headers, no tokens or autoindex | GrapheneOS infrastructure and grapheneos.org |
 | Certificates (webserver) | non-root Certbot webroot HTTP-01, required short-lived ACME profile, private state, fixed validation/reload boundary | GrapheneOS infrastructure plus Certbot |
-| Stalwart (mailserver) | PostgreSQL-only feature set, dedicated account, restrictive systemd sandbox, disabled before provisioning, bounded ingress and egress | Stalwart upstream plus GrapheneOS infrastructure principles |
+| Stalwart (mailserver) | PostgreSQL-only feature set, OBS-packaged WebUI, dedicated SELinux domain and account, restrictive systemd sandbox, bounded ingress and egress | Stalwart upstream plus GrapheneOS infrastructure principles |
+| PostgreSQL (mailserver) | Local Unix socket only, checksummed cluster, peer identity, no database secret, least-privileged role, restrictive systemd sandbox | Fedora PostgreSQL plus ParticleOS policy |
 | Services | capability bounds, namespaces, read-only filesystem, syscall/address-family restrictions, OOM policy | GrapheneOS infrastructure |
 | Privilege elevation | systemd run0, isolated transient service, polkit authentication, no setuid sudo/mount/umount | systemd |
 
@@ -167,15 +171,18 @@ separate `process2:nosuid_transition` permission before a program on `/usr` may
 enter its daemon domain. Fedora grants this to some systemd services but not to
 every daemon shipped here. ParticleOS grants only the missing `init_t`
 transitions to `udev_t`, `system_dbusd_t`, `ldconfig_t`, `iptables_t`,
-`sshd_keygen_t`, `chronyd_t`, and the policy-selected login user domain; it
-does not grant the related `nnp_transition` permission or any runtime-file
-access to `init_t`.
+`sshd_keygen_t`, `chronyd_t`, `postgresql_t` and `stalwart_t` in the mailserver
+role, and the policy-selected login user domain. PostgreSQL and Stalwart also
+receive the matching `nnp_transition`, because both dedicated services
+intentionally retain `NoNewPrivileges=yes`; no runtime-file access is granted
+to `init_t`.
 The same narrowly scoped policy preserves Fedora's chained transitions for
 device sysctls and LVM probing, Ed25519 host-key generation and relabeling,
 homed account creation, console authentication, the per-user manager and
 login shell, and OpenSSH's current session re-exec. Each source and target is
 named explicitly; no unrelated domain receives `nosuid_transition` and the
-related `nnp_transition` permission is never granted.
+related `nnp_transition` permission is limited to the PostgreSQL and Stalwart
+daemon transitions described above.
 Fedora also labels systemd's udev compatibility launcher symlink `lib_t`
 instead of `udev_exec_t`. The host unit therefore executes its correctly
 labelled `/usr/bin/udevadm` target directly while retaining the
@@ -267,9 +274,9 @@ Shared inbound policy permits:
   on UDP 443 with global and source-keyed admission limits, plus per-source and
   global concurrent TCP connection ceilings below nginx's worker capacity;
 - in the mailserver role only, new TCP connections to SMTP 25, HTTPS 443,
-  implicit-TLS submission/IMAP/POP3 on 465/993/995, and ManageSieve STARTTLS on
-  4190 with the same layered admission and concurrency bounds; bootstrap HTTP
-  8080 and legacy plaintext mail ports remain closed;
+  implicit-TLS submission 465, and implicit-TLS IMAP 993 with the same layered
+  admission and concurrency bounds; POP3, ManageSieve, bootstrap HTTP 8080,
+  PostgreSQL, and legacy plaintext mail ports remain closed;
 - new TCP connections to port 22 only from the mutable IPv4 or IPv6
   administrator sets, with a much lower rate limit.
 
@@ -277,10 +284,11 @@ The dormant DNS placeholder adds no public ingress and selects no service
 packages. Forwarding is denied. Strict FIB checks implement
 reverse-path filtering for both address families and reject weak-host traffic.
 
-Outbound policy first permits established replies. systemd-network can create
+Outbound policy first permits established replies and loopback traffic. systemd-network can create
 only DHCP client flows, chrony only NTP/UDP 123 and NTS-KE/TCP 4460 flows,
 web-role Certbot only rate-limited TCP/80 and TCP/443 flows, and mail-role
-Stalwart only rate-limited SMTP/TCP 25 and HTTPS/TCP 443 flows. systemd-resolved
+Stalwart only rate-limited SMTP/TCP 25 and HTTPS/TCP 443 flows; its DNS client
+can reach only the systemd-resolved loopback stub. systemd-resolved
 can connect only to Cloudflare's two IPv4 and two IPv6 anycast endpoints on
 TCP/853; UDP/TCP port 53 egress is absent. nginx and generic root processes
 cannot initiate a connection. systemd's dynamic nftables integration grants
@@ -307,7 +315,10 @@ The resolver ignores DHCPv4, DHCPv6, and IPv6 RA DNS data and installs a global
 `~.` route to its fixed authenticated upstreams. `DNSOverTLS=yes` and
 `DNSSEC=yes` are strict rather than opportunistic. A blocked DoT path or failed
 certificate/DNSSEC validation therefore causes resolution failure; the system
-does not downgrade to plaintext or an unvalidated provider resolver.
+does not downgrade to plaintext or an unvalidated provider resolver. Stalwart
+declares `systemd-resolved.service` as a hard unit dependency, has no external
+port-53 firewall path, and the counted-boot mail health gate fails if a signed
+name cannot be resolved through this path.
 
 ## Administration
 
@@ -364,12 +375,14 @@ The webserver role additionally permits:
 
 The mailserver role additionally permits Stalwart's package-managed mutable
 configuration in `/etc/stalwart`, state in `/var/lib/stalwart`, and bounded
-journal/file logging state in `/var/log/stalwart`. The environment file is
-root-only mode 0600; it contains no packaged secret. Stalwart starts under its
-non-login account and remains disabled until PostgreSQL and permanent
-credentials are ready. The default database endpoint is loopback. A remote
-database requires strict TLS and an explicit destination-specific firewall
-rule rather than generic database egress.
+journal/file logging state in `/var/log/stalwart`. PostgreSQL state is confined
+to `/var/lib/pgsql`; the mode-0770 `stalwart`-group socket is the only listener
+under `/run/postgresql`, where peer authentication maps the non-login
+`stalwart` OS account to the same least-privileged database role. No database
+password or Stalwart environment file is shipped. A remote database is outside
+this appliance profile and would require a new signed image policy, strict TLS,
+credentials, health checks, SELinux rules, and a destination-specific firewall
+rule.
 
 Configuration under `/usr/lib/particleos` changes only through a new signed
 image. Certbot state and TLS private keys are owned by the non-login `certbot`
@@ -421,11 +434,21 @@ firewall and irreversible module lockdown.
 
 Stalwart's bootstrap/recovery HTTP listener on port 8080 is intentionally
 reachable only through localhost. Operators provision it through the console
-or an SSH tunnel, remove the temporary recovery credential immediately, use
-Ed25519 DKIM keys, and configure the production hostname and TLS before
-enabling the service. The image does not bundle PostgreSQL or any database
-credential. This keeps the generic artifact minimal and prevents a newly
-booted image from becoming a remotely configurable mail server.
+or an SSH tunnel, use Ed25519 DKIM keys, and configure the production hostname,
+TLS, domains, and abuse policy before accepting production mail. The image
+bundles PostgreSQL because it is an enforced local dependency, but disables its
+network listeners and uses Unix peer authentication with no database secret.
+
+The Stalwart WebUI is a checksum-pinned release asset inside the signed RPM and
+dm-verity-protected `/usr` payload. The patched server accepts only its exact
+`file:///usr/share/stalwart/webui.zip` URL, so registry updates cannot recreate
+the upstream first-boot HTTPS downloader. POP3 and ManageSieve listeners are
+absent from the initial registry, their ports are absent from nftables, and the
+dedicated `stalwart_t` SELinux domain receives neither port-type permission.
+That domain can read only labelled configuration/WebUI content, manage labelled
+state, log, runtime, and private-temporary trees, connect to PostgreSQL only by
+its Unix socket, resolve through the host DNS path, and use only the selected
+SMTP, IMAP, and HTTP port types.
 
 ## Release verification
 
@@ -446,11 +469,12 @@ A role release is not complete until the exact OBS artifact has been:
    SELinux socket denials.
 
 For a mailserver release, verification additionally checks the exact Stalwart
-package version and signature, disabled-by-default state, systemd sandbox,
-closed bootstrap and plaintext ports, permitted mail ports, and absence of
-packaged secrets. A production deployment test then supplies a disposable
-PostgreSQL database and credentials before exercising protocol and delivery
-behavior; the generic image test does not invent deployment credentials.
+package version and signature, packaged WebUI digest, active dedicated SELinux
+domain, PostgreSQL Unix-only and peer-authenticated state, absence of database
+secrets, active mail boot-health gate, systemd sandboxes, closed POP3,
+ManageSieve, bootstrap, plaintext, and PostgreSQL ports, and the four permitted
+public TCP ports. The exact generic image must bootstrap Stalwart against its
+own local database without deployment credentials.
 
 Static repository validation cannot prove the behavior of a Fedora kernel,
 firmware, OBS worker, generated UKI, TPM implementation, or target hardware.

@@ -1,0 +1,51 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+
+database_ready=false
+for ((attempt = 0; attempt < 60; attempt++)); do
+    result="$(/usr/bin/psql --no-password --no-psqlrc \
+        --host=/run/postgresql --username=stalwart --dbname=stalwart \
+        --tuples-only --no-align --command='SELECT 1' 2>/dev/null || true)"
+    if [[ $result == 1 ]]; then
+        database_ready=true
+        break
+    fi
+    sleep 1
+done
+if [[ $database_ready != true ]]; then
+    echo 'Stalwart cannot authenticate to its local PostgreSQL database by peer identity' >&2
+    exit 1
+fi
+
+dns_ready=false
+for ((attempt = 0; attempt < 60; attempt++)); do
+    if /usr/bin/resolvectl --cache=no --legend=no query cloudflare.com \
+            >/dev/null 2>&1; then
+        dns_ready=true
+        break
+    fi
+    sleep 1
+done
+if [[ $dns_ready != true ]]; then
+    echo 'strict systemd-resolved DNS-over-TLS/DNSSEC resolution is unavailable' >&2
+    exit 1
+fi
+
+webui_ready=false
+for ((attempt = 0; attempt < 60; attempt++)); do
+    if exec 3<>/dev/tcp/127.0.0.1/8080; then
+        printf 'HEAD /admin HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
+        IFS= read -r status <&3 || true
+        exec 3>&- 3<&-
+        if [[ $status =~ ^HTTP/[0-9.]+\ [23][0-9][0-9] ]]; then
+            webui_ready=true
+            break
+        fi
+    fi
+    sleep 1
+done
+if [[ $webui_ready != true ]]; then
+    echo 'Stalwart did not serve its packaged WebUI on the loopback bootstrap listener' >&2
+    exit 1
+fi

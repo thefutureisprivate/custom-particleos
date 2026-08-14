@@ -13,17 +13,18 @@ current build target and will require its own package set, policy, and tests.
 | Role | Image ID | Additional packages | Service state |
 |---|---|---|---|
 | `webserver` | `ParticleOS-Webserver` | `nginx-core`, Certbot | Production role; nginx and renewal enabled |
-| `mailserver` | `ParticleOS-Mailserver` | PostgreSQL-only Stalwart | Built by OBS; disabled pending provisioning |
+| `mailserver` | `ParticleOS-Mailserver` | PostgreSQL 18, PostgreSQL-only Stalwart | Production role; local database and Stalwart enabled |
 | `dnsserver` | `ParticleOS-Dnsserver` | None | Empty placeholder; not built by OBS |
 
 The PostgreSQL-only Stalwart RPM recipe is maintained in the dedicated
 [custom-stalwart](https://github.com/thefutureisprivate/custom-stalwart)
-repository. Stalwart is installed but disabled until its database, secret,
-hostname, TLS, permanent administrator, and mail policy are provisioned. Its
-bootstrap/recovery listener on TCP 8080 is never public. DNS remains an empty
-placeholder with no current build target. The aggregate requests `webserver`
-and `mailserver` together, so mkosi assembles the shared `base` dependency once
-and derives both complete images from it.
+repository. The mail role initializes a checksummed, Unix-socket-only local
+PostgreSQL cluster and provisions an unprivileged `stalwart` database role by
+peer identity, so no database password exists. Stalwart starts automatically;
+its bootstrap/recovery listener on TCP 8080 is never public. The DNS-service
+role remains an empty placeholder with no current build target. The aggregate
+requests `webserver` and `mailserver` together, so mkosi assembles the shared
+`base` dependency once and derives both complete images from it.
 
 There is intentionally no `Containerfile`, OCI image, bootc layer, or
 container build. [`mkosi.conf`](./mkosi.conf) is the native dependency-graph
@@ -86,12 +87,15 @@ disclosure. Its non-root Certbot integration uses HTTP-01, requires the ACME
 `shortlived` profile, and crosses into nginx only through a fixed
 file-triggered validation/reload boundary.
 
-The mailserver role supplies the PostgreSQL-only Stalwart package behind a
-role-specific default-deny firewall. It admits only SMTP 25, HTTPS 443,
-implicit-TLS submission/IMAP/POP3 on 465/993/995, and ManageSieve 4190; legacy
-plaintext mail ports and bootstrap HTTP 8080 remain closed. Stalwart egress is
-limited to SMTP 25 and HTTPS 443. Provisioning instructions are installed at
-`/usr/share/doc/particleos/stalwart/README`.
+The mailserver role supplies the PostgreSQL-only Stalwart package and a
+local-only PostgreSQL server behind a role-specific default-deny firewall. It
+admits only SMTP 25, HTTPS 443, implicit-TLS submission 465, and implicit-TLS
+IMAP 993; POP3, ManageSieve, plaintext client mail ports, PostgreSQL, and
+bootstrap HTTP 8080 remain closed. Stalwart egress is limited to SMTP 25 and
+HTTPS 443, with resolver traffic confined to the loopback systemd-resolved
+stub. A dedicated SELinux domain independently enforces the selected ports,
+local database socket, and labelled file access. Provisioning instructions are
+installed at `/usr/share/doc/particleos/stalwart/README`.
 
 See [docs/SECURITY-MODEL.md](./docs/SECURITY-MODEL.md) for trust boundaries,
 GrapheneOS hardening coverage, and deliberate exclusions.
@@ -219,10 +223,10 @@ inspect the manifest, boot the image with Secure Boot and TPM2 in a disposable
 machine, and verify the effective unit sandboxes with
 `systemd-analyze security`.
 
-The release test must also confirm that `resolvectl status` reports DNS over
-TLS enabled and DNSSEC supported/enabled, a valid signed name resolves, a
-deliberately broken DNSSEC name fails, and the firewall exposes no resolver
-flow on port 53.
+Every role release test must also confirm that `resolvectl status` reports DNS
+over TLS enabled and DNSSEC supported/enabled, a valid signed name resolves, a
+deliberately broken DNSSEC name fails, and the firewall exposes no resolver flow
+on port 53.
 
 ## Install
 
@@ -408,8 +412,8 @@ The last command must fail DNSSEC validation.
 The retained particleOS `systemd-sysupdate` transfer definitions update the A/B
 `/usr`, verity metadata, and UKI artifacts produced by OBS. Their artifact
 patterns derive from `%M`, so the current image can consume only its
-`ParticleOS-Webserver` update namespace. The reserved mail and DNS namespaces
-have no published artifacts.
+matching `ParticleOS-Webserver` or `ParticleOS-Mailserver` update namespace.
+The DNS namespace remains reserved and unpublished.
 
 Updates are fully unattended. `systemd-sysupdate-update.timer` periodically
 stages a complete signed version. PID 1 publishes only that service's dynamic
@@ -427,7 +431,9 @@ run0 systemctl start systemd-sysupdate-update.service
 New UKIs start with three boot attempts. On a counted boot, the generic failed
 unit checker must complete before `boot-complete.target`; the webserver role
 also validates nginx's configuration and an actual HTTP response on its local
-port 80 listener. A failed gate is not blessed and reboots the counted slot.
+port 80 listener. The mailserver role verifies PostgreSQL peer authentication,
+strict DNS resolution, Stalwart, and the packaged WebUI on its loopback-only
+bootstrap listener. A failed gate is not blessed and reboots the counted slot.
 After three failed attempts, systemd-boot selects the previous blessed UKI and
 A/B `/usr` set. The forced-reboot action is conditional on the
 `LoaderBootCountPath` EFI variable, so an already blessed normal boot cannot
@@ -455,7 +461,8 @@ release-critical trust roots.
 Configuration under `/usr/lib/particleos` is immutable and changes through a
 new signed image. Per-machine SSH policy and homed storage are shared mutable
 surfaces. The webserver role additionally permits Certbot state, nginx virtual
-hosts, and web content. The dormant mail and DNS images add no packages or
-mutable role policy. Add required virtual hardware drivers to the early module
-list before building: module loading is permanently disabled for the rest of
-each boot.
+hosts, and web content. The mailserver role permits only its labelled Stalwart
+configuration/state and PostgreSQL data; the dormant DNS image adds no package
+or mutable role policy. Add required virtual hardware drivers to the early
+module list before building: module loading is permanently disabled for the
+rest of each boot.

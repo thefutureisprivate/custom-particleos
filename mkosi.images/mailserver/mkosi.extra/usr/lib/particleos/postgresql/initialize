@@ -1,0 +1,27 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+pgdata=/var/lib/pgsql/data
+marker=$pgdata/.particleos-initialized
+
+if [[ ! -f $pgdata/PG_VERSION ]]; then
+    export PGSETUP_INITDB_OPTIONS='--data-checksums --auth-local=peer --auth-host=reject'
+    /usr/bin/postgresql-setup --initdb --unit postgresql
+fi
+
+[[ -f $pgdata/PG_VERSION ]]
+
+# PostgreSQL includes this file from the generated main configuration. Keep the
+# network boundary in an independently auditable, appliance-owned fragment.
+install -d -m 0700 "$pgdata/conf.d"
+if ! grep -Fqx "include_dir = 'conf.d'" "$pgdata/postgresql.conf"; then
+    printf "\ninclude_dir = 'conf.d'\n" >>"$pgdata/postgresql.conf"
+fi
+
+install -m 0600 /usr/lib/particleos/postgresql/particleos.conf \
+    "$pgdata/conf.d/particleos.conf"
+install -m 0600 /usr/lib/particleos/postgresql/pg_hba.conf \
+    "$pgdata/pg_hba.conf"
+install -m 0600 /dev/null "$marker"

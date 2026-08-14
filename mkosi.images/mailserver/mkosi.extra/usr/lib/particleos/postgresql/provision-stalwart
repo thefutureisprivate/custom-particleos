@@ -1,0 +1,36 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+export PGHOST=/run/postgresql
+export PGDATABASE=postgres
+export PGUSER=postgres
+
+/usr/bin/psql --no-password --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+DO $particleos$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'stalwart') THEN
+        CREATE ROLE stalwart LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+            NOINHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 64;
+    ELSE
+        ALTER ROLE stalwart LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+            NOINHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 64;
+    END IF;
+END
+$particleos$;
+
+SELECT 'CREATE DATABASE stalwart OWNER stalwart'
+WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_database WHERE datname = 'stalwart')
+\gexec
+
+ALTER DATABASE stalwart OWNER TO stalwart;
+REVOKE ALL ON DATABASE stalwart FROM PUBLIC;
+GRANT CONNECT, TEMPORARY ON DATABASE stalwart TO stalwart;
+SQL
+
+/usr/bin/psql --no-password --no-psqlrc --set=ON_ERROR_STOP=1 \
+    --dbname=stalwart <<'SQL'
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA public TO stalwart;
+SQL

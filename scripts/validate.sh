@@ -49,7 +49,7 @@ declare -A role_image_ids=(
 )
 declare -A role_packages=(
     [webserver]="certbot nginx-core"
-    [mailserver]="stalwart"
+    [mailserver]="postgresql-server stalwart"
 )
 base_config=mkosi.images/base/mkosi.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
@@ -113,11 +113,11 @@ done
 if [[ -n "$(extract_stanza Packages mkosi.images/dnsserver/mkosi.conf)" ]]; then
     fail "mkosi.images/dnsserver/mkosi.conf must not select packages while the role is dormant"
 fi
-require_fixed "Stalwart is installed but deliberately disabled" mkosi.images/mailserver/mkosi.conf
+require_fixed "local Unix-socket-only PostgreSQL instance" mkosi.images/mailserver/mkosi.conf
 require_fixed "Empty placeholder" mkosi.images/dnsserver/mkosi.conf
 if rg -n '^[[:space:]]*(dovecot|dovecot-pigeonhole|postfix|postfix-pcre|dnsdist|unbound)[[:space:]]*$' \
         mkosi.conf mkosi.role.conf mkosi.images mkosi.profiles .obs/fedora/x86-64; then
-    fail "dormant mail and DNS daemon packages must not be selected"
+    fail "unselected alternative mail and DNS daemon packages must not be selected"
 fi
 
 require_fixed "Format=disk" "$role_policy"
@@ -473,6 +473,15 @@ mail_firewall="$mail_extra/usr/lib/particleos/nftables-role.nft"
 mail_preset="$mail_extra/usr/lib/systemd/system-preset/20-particleos-mailserver.preset"
 mail_dropin="$mail_extra/usr/lib/systemd/system/stalwart.service.d/40-particleos-hardening.conf"
 mail_readme="$mail_extra/usr/share/doc/particleos/stalwart/README"
+postgres_dropin="$mail_extra/usr/lib/systemd/system/postgresql.service.d/40-particleos-hardening.conf"
+postgres_setup_unit="$mail_extra/usr/lib/systemd/system/particleos-postgresql-setup.service"
+postgres_setup="$mail_extra/usr/lib/particleos/postgresql/initialize"
+postgres_conf="$mail_extra/usr/lib/particleos/postgresql/particleos.conf"
+postgres_hba="$mail_extra/usr/lib/particleos/postgresql/pg_hba.conf"
+stalwart_db_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-database.service"
+stalwart_db_setup="$mail_extra/usr/lib/particleos/postgresql/provision-stalwart"
+mail_health_unit="$mail_extra/usr/lib/systemd/system/particleos-mailserver-health.service"
+mail_health_check="$mail_extra/usr/lib/particleos/health/mailserver"
 require_fixed "authenticator = webroot" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "webroot-path = /var/www/html" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "required-profile = shortlived" $web_extra/usr/lib/particleos/certbot/cli.ini
@@ -507,7 +516,9 @@ require_fixed "meter ssh4" "$base_firewall"
 require_fixed "udp dport 443 ct state new" "$web_firewall"
 require_fixed "net.netfilter.nf_conntrack_max = 32768" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "meta skuid certbot tcp dport { 80, 443 } ct state new limit rate 8/second burst 16 packets accept" "$web_firewall"
-require_fixed "tcp dport { 25, 443, 465, 993, 995, 4190 } ct state new accept" "$mail_firewall"
+require_fixed "tcp dport { 25, 443, 465, 993 } ct state new accept" "$mail_firewall"
+reject_fixed "995" "$mail_firewall"
+reject_fixed "4190" "$mail_firewall"
 require_fixed "add @mail_tcp_conn4 { ip saddr ct count over 64 }" "$mail_firewall"
 require_fixed "ct count over 2048" "$mail_firewall"
 require_fixed "meter mail_tcp4" "$mail_firewall"
@@ -515,12 +526,42 @@ require_fixed "meta skuid stalwart tcp dport 25 ct state new limit rate 64/secon
 require_fixed "meta skuid stalwart tcp dport 443 ct state new limit rate 8/second burst 16 packets accept" "$mail_firewall"
 reject_fixed "dport 8080" "$mail_firewall"
 reject_fixed "dport { 110, 143, 587" "$mail_firewall"
-require_fixed "disable stalwart.service" "$mail_preset"
-require_fixed "Requires=nftables.service particleos-module-lockdown.service" "$mail_dropin"
-require_fixed "After=nftables.service particleos-module-lockdown.service" "$mail_dropin"
+require_fixed "enable postgresql.service" "$mail_preset"
+require_fixed "enable particleos-stalwart-database.service" "$mail_preset"
+require_fixed "enable stalwart.service" "$mail_preset"
+require_fixed "enable particleos-mailserver-health.service" "$mail_preset"
+require_fixed "Requires=nftables.service particleos-module-lockdown.service postgresql.service particleos-stalwart-database.service systemd-resolved.service" "$mail_dropin"
+require_fixed "After=nftables.service particleos-module-lockdown.service postgresql.service particleos-stalwart-database.service systemd-resolved.service" "$mail_dropin"
 require_fixed "StartLimitIntervalSec=5min" "$mail_dropin"
 require_fixed "PostgreSQL" "$mail_readme"
 require_fixed "localhost:8080" "$mail_readme"
+require_fixed "There is no database password or environment file." "$mail_readme"
+require_fixed "systemd-resolved" "$mail_readme"
+reject_fixed "STALWART_DB_PASSWORD" "$mail_readme"
+require_fixed "Requires=particleos-postgresql-setup.service" "$postgres_dropin"
+require_fixed "RestrictAddressFamilies=AF_UNIX" "$postgres_dropin"
+require_fixed "IPAddressDeny=any" "$postgres_dropin"
+require_fixed "MemoryDenyWriteExecute=yes" "$postgres_dropin"
+require_fixed "User=postgres" "$postgres_setup_unit"
+require_fixed "ConditionPathExists=!/var/lib/pgsql/data/.particleos-initialized" "$postgres_setup_unit"
+require_fixed "--data-checksums --auth-local=peer --auth-host=reject" "$postgres_setup"
+require_fixed "include_dir = 'conf.d'" "$postgres_setup"
+require_fixed "listen_addresses = ''" "$postgres_conf"
+require_fixed "unix_socket_directories = '/run/postgresql'" "$postgres_conf"
+require_fixed "unix_socket_group = 'stalwart'" "$postgres_conf"
+require_fixed "unix_socket_permissions = 0770" "$postgres_conf"
+require_fixed "SupplementaryGroups=stalwart" "$postgres_dropin"
+require_fixed "local   all       all            peer" "$postgres_hba"
+reject_fixed "host " "$postgres_hba"
+require_fixed "Requires=postgresql.service" "$stalwart_db_unit"
+require_fixed "User=postgres" "$stalwart_db_unit"
+require_fixed "CREATE ROLE stalwart LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE" "$stalwart_db_setup"
+require_fixed "REVOKE ALL ON DATABASE stalwart FROM PUBLIC" "$stalwart_db_setup"
+reject_fixed "PASSWORD" "$stalwart_db_setup"
+require_fixed "/usr/share/selinux/packages/particleos_stalwart.pp" mkosi.scripts/particleos.postinst.chroot
+if rg -n 'STALWART_DB_PASSWORD|authSecret.*EnvironmentVariable' "$mail_extra"; then
+    fail "mailserver must not carry a database secret in the environment"
+fi
 require_fixed "meta skuid systemd-resolve ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 853 accept" "$base_firewall"
 require_fixed "meta skuid systemd-resolve ip6 daddr { 2606:4700:4700::1111, 2606:4700:4700::1001 } tcp dport 853 accept" "$base_firewall"
 require_fixed "meta skuid chrony tcp dport 4460 accept" "$base_firewall"
@@ -559,6 +600,18 @@ require_fixed 'if [[ $IMAGE_ID == ParticleOS-Webserver ]]' \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed ".init_t .http_port_t (tcp_socket (name_connect))" \
     "$web_health_policy"
+require_fixed "Requires=systemd-resolved.service postgresql.service particleos-stalwart-database.service stalwart.service" "$mail_health_unit"
+require_fixed "Before=boot-complete.target" "$mail_health_unit"
+require_fixed "FailureAction=reboot" "$mail_health_unit"
+require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" "$mail_health_unit"
+require_fixed "RequiredBy=boot-complete.target" "$mail_health_unit"
+require_fixed "User=stalwart" "$mail_health_unit"
+require_fixed "IPAddressAllow=localhost" "$mail_health_unit"
+require_fixed "IPAddressDeny=any" "$mail_health_unit"
+require_fixed "--host=/run/postgresql --username=stalwart --dbname=stalwart" "$mail_health_check"
+require_fixed "resolvectl --cache=no --legend=no query cloudflare.com" "$mail_health_check"
+require_fixed "/dev/tcp/127.0.0.1/8080" "$mail_health_check"
+require_fixed "HEAD /admin HTTP/1.1" "$mail_health_check"
 require_fixed 'oifname "lo" accept' "$base_firewall"
 
 closed_firewall=mkosi.images/dnsserver/mkosi.extra/usr/lib/particleos/nftables-role.nft
@@ -725,6 +778,7 @@ require_fixed ".init_t .ldconfig_t (process2 (nosuid_transition))" "$nosuid_tran
 require_fixed ".init_t .iptables_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .sshd_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .chronyd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".init_t .postgresql_t (process2 (nnp_transition nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .bootloader_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".udev_t .systemd_sysctl_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".udev_t .lvm_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
@@ -740,7 +794,9 @@ require_fixed ".sshd_session_t .unconfined_t (process2 (nosuid_transition))" "$n
 require_fixed ".unconfined_t .chronyc_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".policykit_auth_t .chkpwd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .chkpwd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
-reject_fixed "nnp_transition" "$nosuid_transition_policy"
+if [[ $(rg -c "nnp_transition" "$nosuid_transition_policy") -ne 1 ]]; then
+    fail "only the PostgreSQL daemon transition may receive nnp_transition in the shared policy"
+fi
 runtime_symlink_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_runtime_symlinks.cil
 require_fixed "/usr/lib/particleos/selinux/particleos_runtime_symlinks.cil" \
     mkosi.scripts/particleos.postinst.chroot

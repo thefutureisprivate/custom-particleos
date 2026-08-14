@@ -1,23 +1,47 @@
 ParticleOS Stalwart provisioning
 ================================
 
-Stalwart is installed but disabled by default. Before enabling it:
+The image owns Stalwart's database dependency. On first boot it initializes a
+checksummed PostgreSQL cluster in /var/lib/pgsql, disables every TCP listener,
+creates the unprivileged stalwart database role, and authenticates the
+stalwart OS account through PostgreSQL peer authentication on
+/run/postgresql. There is no database password or environment file.
 
-1. Provision a PostgreSQL database and role. The immutable package default
-   connects to a local server on 127.0.0.1:5432. If a remote database is used,
-   enable TLS with valid certificate verification, change config.json, and add
-   a destination-specific nftables egress rule for that database.
-2. Set STALWART_DB_PASSWORD in /etc/stalwart/stalwart.env with mode 0600.
-3. Use STALWART_RECOVERY_ADMIN only for initial recovery access, then remove
-   it immediately after creating a permanent administrator.
-4. Complete bootstrap through a console or an SSH tunnel to localhost:8080.
-   Port 8080 is intentionally never admitted by the public firewall.
-5. Configure the production hostname, TLS certificates, Ed25519 DKIM keys,
-   domains, and abuse controls before enabling public service.
-6. Enable the service with `run0 systemctl enable --now stalwart.service`.
+PostgreSQL, role provisioning, and Stalwart are enabled by the image. Complete
+application bootstrap as follows:
 
-The public firewall admits TCP ports 25, 443, 465, 993, 995, and 4190. It does
-not admit plaintext submission/IMAP/POP3 ports 587, 143, or 110. Stalwart may
-create outbound TCP connections only to SMTP port 25 and HTTPS port 443. The
-system resolver remains the only DNS path and validates DNSSEC over Cloudflare
-DNS over TLS.
+1. Connect through the console or an SSH tunnel to localhost:8080. Port 8080
+   is intentionally never admitted by the public firewall.
+2. Create the permanent administrator and configure the production hostname,
+   TLS certificates, Ed25519 DKIM keys, domains, relay policy, and abuse
+   controls before accepting production mail.
+3. Keep the local HTTP bootstrap listener available on loopback: the counted
+   update-health gate uses /admin to verify the OBS-packaged WebUI before
+   blessing a new OS slot.
+
+The public firewall admits only TCP 25, 443, 465, and 993. POP3, ManageSieve,
+plaintext client protocols, PostgreSQL, and bootstrap TCP 8080 are closed.
+Stalwart may create external connections only to SMTP TCP 25 and HTTPS TCP 443.
+DNS packets are limited to loopback and therefore must pass through
+systemd-resolved. resolved authenticates Cloudflare over DNS-over-TLS and
+performs strict local DNSSEC validation; blocked DoT or failed validation makes
+mail resolution fail closed.
+
+The WebUI is a checksum-pinned RPM payload in immutable /usr. Stalwart rejects
+every application-bundle URL except file:///usr/share/stalwart/webui.zip, so
+the WebUI cannot update outside the signed OBS and system-update supply chain.
+
+The particleos_stalwart SELinux module confines the service to its labelled
+configuration, WebUI, state, logs, runtime and private temporary files; the
+PostgreSQL Unix socket; the system resolver; and the selected SMTP, IMAP and
+HTTP port types. Diagnose the mail stack with:
+
+    run0 systemctl status postgresql.service particleos-stalwart-database.service stalwart.service
+    run0 systemctl start particleos-mailserver-health.service
+    run0 journalctl -u particleos-mailserver-health.service
+    run0 -u stalwart psql --host=/run/postgresql --dbname=stalwart --command='SELECT 1'
+
+Changing to a remote database, adding protocols, or removing the loopback
+bootstrap listener changes the appliance security and health model. Do that
+only through a reviewed signed image change covering nftables, SELinux,
+credentials, service ordering, health checks, and documentation.

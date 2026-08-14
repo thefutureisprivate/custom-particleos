@@ -13,6 +13,11 @@
   (allow .init_t .sshd_keygen_t (process2 (nosuid_transition)))
   (allow .init_t .chronyd_t (process2 (nosuid_transition)))
 
+  ; The mail appliance retains NoNewPrivileges for its local-only database.
+  ; Fedora defines the postgresql_t transition but does not grant either
+  ; execution constraint required by ParticleOS's nosuid /usr mount.
+  (allow .init_t .postgresql_t (process2 (nnp_transition nosuid_transition)))
+
   ; A successful counted boot transitions the stock systemd-bless-boot helper
   ; through bootloader_exec_t into bootloader_t before marking the UKI good.
   ; Preserve that Fedora transition from the nosuid /usr mount.

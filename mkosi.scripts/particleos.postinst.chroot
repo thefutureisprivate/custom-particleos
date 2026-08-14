@@ -66,6 +66,10 @@ if [[ $IMAGE_ID == ParticleOS-Webserver ]]; then
     selinux_role_modules+=(
         /usr/lib/particleos/selinux/particleos_web_health.cil
     )
+elif [[ $IMAGE_ID == ParticleOS-Mailserver ]]; then
+    selinux_role_modules+=(
+        /usr/share/selinux/packages/particleos_stalwart.pp
+    )
 fi
 semodule -X 300 -i \
     /usr/lib/particleos/selinux/secureblue_harden_userns.cil \
