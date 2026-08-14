@@ -12,6 +12,9 @@ MatchPattern=%M_@v_%a.usr-%a-verity-sig.@u.raw
 [Target]
 Type=partition
 Path=auto
+# The first pattern names all newly installed slots. The second keeps existing
+# pre-vsig webserver slots eligible for an in-place update and rename.
+MatchPattern=%M_@v_vsig
 MatchPattern=%M_@v_verity_sig
 MatchPartitionType=usr-verity-sig
 PartitionFlags=0

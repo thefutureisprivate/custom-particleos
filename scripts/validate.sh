@@ -167,10 +167,27 @@ require_fixed "base.manifest.gz" "$obs_build"
 require_fixed "copy_release_metadata /usr/src/packages/SOURCES/base.manifest.gz" "$obs_build"
 require_fixed "role_roothashes=(/usr/src/packages/SOURCES/ParticleOS-*.roothash)" "$obs_build"
 require_fixed 'role_prefix=${roothash%.roothash}' "$obs_build"
+require_fixed 'materialize_repart_label "${roothash%.roothash}"' "$obs_build"
+require_fixed 'label="${image_id}_${image_version}_vsig"' "$obs_build"
+require_fixed 'if ((${#label} > 36))' "$obs_build"
+require_fixed "hashes.cpio.rsasign.sig" "$obs_build"
 for role_metadata_suffix in manifest.gz osrelease repart.tar; do
     require_fixed 'copy_release_metadata "$role_prefix.'"$role_metadata_suffix"'"' "$obs_build"
 done
 require_fixed "No ParticleOS role roothashes were supplied to the signing pass" "$obs_build"
+
+for verity_sig_repart in \
+        mkosi.repart/10-usr-verity-sig.conf \
+        mkosi.extra/usr/lib/repart.d/10-usr-verity-sig.conf; do
+    require_fixed "Label=%M_%A_vsig" "$verity_sig_repart"
+    reject_fixed "Label=%M_%A_verity_sig" "$verity_sig_repart"
+done
+for verity_sig_transfer in \
+        mkosi.sysupdate/10-usr-verity-sig.transfer \
+        mkosi.obs.extra/usr/lib/sysupdate.d/20-particleos-verity-sig.transfer; do
+    require_fixed "MatchPattern=%M_@v_vsig" "$verity_sig_transfer"
+    require_fixed "MatchPattern=%M_@v_verity_sig" "$verity_sig_transfer"
+done
 
 require_fixed "# needssslcertforbuild" "$obs_recipe"
 require_fixed "Dependencies=webserver,mailserver" "$obs_recipe"
