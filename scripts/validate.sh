@@ -542,6 +542,7 @@ require_fixed "Requires=particleos-postgresql-setup.service" "$postgres_dropin"
 require_fixed "RestrictAddressFamilies=AF_UNIX" "$postgres_dropin"
 require_fixed "IPAddressDeny=any" "$postgres_dropin"
 require_fixed "MemoryDenyWriteExecute=yes" "$postgres_dropin"
+require_fixed "SystemCallFilter=@chown" "$postgres_dropin"
 require_fixed "User=postgres" "$postgres_setup_unit"
 require_fixed "ConditionPathExists=!/var/lib/pgsql/data/.particleos-initialized" "$postgres_setup_unit"
 require_fixed "/usr/lib/particleos/postgresql/initialize -- system_u:object_r:postgresql_exec_t:s0" mkosi.scripts/particleos.postinst.chroot
