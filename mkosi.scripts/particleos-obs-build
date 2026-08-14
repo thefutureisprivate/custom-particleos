@@ -16,6 +16,18 @@ if [[ ! -x "$mkosi_obs_build" ]]; then
     exit 1
 fi
 
+obs_sources_dir=/usr/src/packages/SOURCES
+release_sources_dir=$obs_sources_dir
+signing_workdir=
+
+cleanup_signing_workdir() {
+    if [[ -n ${signing_workdir:-} && -d $signing_workdir &&
+            $signing_workdir == /tmp/particleos-obs-sign.* ]]; then
+        rm -r -- "$signing_workdir"
+    fi
+}
+trap cleanup_signing_workdir EXIT
+
 # systemd-repart expands %M and %A from the build host during mkosi-obs's
 # deferred signing pass, not from the --root= os-release supplied by the
 # upstream helper. The first role in an aggregate therefore otherwise receives
@@ -44,8 +56,10 @@ read_os_release_value() {
 
 materialize_repart_label() {
     local role_prefix=$1
+    local staged_sources_dir=$2
     local osrelease="$role_prefix.osrelease"
     local repart_tar="$role_prefix.repart.tar"
+    local staged_repart_tar="$staged_sources_dir/${repart_tar##*/}"
     local image_id image_version label workdir definition rewritten_tar
 
     [[ -f $osrelease ]] || {
@@ -70,7 +84,7 @@ materialize_repart_label() {
         return 1
     fi
 
-    workdir="$(mktemp -d /tmp/particleos-repart.XXXXXX)"
+    workdir="$(mktemp -d "$signing_workdir/repart.XXXXXX")"
     tar -xf "$repart_tar" -C "$workdir"
     definition="$workdir/10-usr-verity-sig.conf"
     if [[ ! -f $definition ]] || ! grep -qx 'Type=usr-verity-sig' "$definition"; then
@@ -89,24 +103,57 @@ materialize_repart_label() {
         --owner=0 --group=0 --numeric-owner \
         -cf "$rewritten_tar" -C "$workdir" \
         00-esp.conf 10-usr-verity-sig.conf 11-usr-verity.conf 12-usr.conf
-    mv -- "$rewritten_tar" "$repart_tar"
+    # Replace only the symlink in the writable source view. OBS mounts the
+    # original SOURCES directory read-only during this pass.
+    rm -- "$staged_repart_tar"
+    mv -- "$rewritten_tar" "$staged_repart_tar"
     rm -r -- "$workdir"
 }
 
 shopt -s nullglob
-role_roothashes=(/usr/src/packages/SOURCES/ParticleOS-*.roothash)
+role_roothashes=("$obs_sources_dir"/ParticleOS-*.roothash)
 if ((${#role_roothashes[@]} == 0)); then
     echo "No ParticleOS role roothashes were supplied to the signing pass" >&2
     exit 1
 fi
 
-if [[ -f /usr/src/packages/SOURCES/hashes.cpio.rsasign.sig ]]; then
-    for roothash in "${role_roothashes[@]}"; do
-        materialize_repart_label "${roothash%.roothash}"
-    done
-fi
+if [[ -f $obs_sources_dir/hashes.cpio.rsasign.sig ]]; then
+    signing_workdir="$(mktemp -d /tmp/particleos-obs-sign.XXXXXX)"
+    staged_sources_dir="$signing_workdir/SOURCES"
+    mkdir "$staged_sources_dir"
 
-"$mkosi_obs_build" "$@"
+    # Preserve the upstream signer's exact inputs without copying the large
+    # image artifacts. Only each small repart archive is replaced below.
+    source_entries=("$obs_sources_dir"/*)
+    if ((${#source_entries[@]} == 0)); then
+        echo "OBS source directory is empty: $obs_sources_dir" >&2
+        exit 1
+    fi
+    for source in "${source_entries[@]}"; do
+        ln -s -- "$source" "$staged_sources_dir/${source##*/}"
+    done
+
+    for roothash in "${role_roothashes[@]}"; do
+        materialize_repart_label "${roothash%.roothash}" "$staged_sources_dir"
+    done
+
+    # The upstream implementation has no source-directory option. Patch its
+    # fixed OBS path and make its initial recursive copy dereference our source
+    # symlinks; signing and artifact selection otherwise remain unchanged.
+    staged_mkosi_obs_build="$signing_workdir/mkosi.build"
+    sed -e 's#^cp -r /usr/src/packages/SOURCES/#cp -rL /usr/src/packages/SOURCES/#' \
+        -e "s#/usr/src/packages/SOURCES#$staged_sources_dir#g" \
+        "$mkosi_obs_build" >"$staged_mkosi_obs_build"
+    grep -qF "cp -rL $staged_sources_dir/" "$staged_mkosi_obs_build" || {
+        echo "Upstream signer no longer contains the expected artifact copy" >&2
+        exit 1
+    }
+    chmod 0755 "$staged_mkosi_obs_build"
+    release_sources_dir=$staged_sources_dir
+    "$staged_mkosi_obs_build" "$@"
+else
+    "$mkosi_obs_build" "$@"
+fi
 
 obs_output_dir=/work/src/usr/src/packages/OTHER
 if [[ ! -d "$obs_output_dir" ]]; then
@@ -125,7 +172,7 @@ copy_release_metadata() {
     cp --reflink=auto -- "$source" "$obs_output_dir/"
 }
 
-copy_release_metadata /usr/src/packages/SOURCES/base.manifest.gz
+copy_release_metadata "$release_sources_dir/base.manifest.gz"
 
 # A non-installing aggregate can emit multiple complete roles. Upstream copies
 # metadata only for mkosi's final IMAGE_ID, although it correctly signs every
@@ -135,7 +182,8 @@ copy_release_metadata /usr/src/packages/SOURCES/base.manifest.gz
 # it deliberately so importctl cannot misidentify it as the raw disk's hash.
 for roothash in "${role_roothashes[@]}"; do
     role_prefix=${roothash%.roothash}
-    copy_release_metadata "$role_prefix.manifest.gz"
-    copy_release_metadata "$role_prefix.osrelease"
-    copy_release_metadata "$role_prefix.repart.tar"
+    role_basename=${role_prefix##*/}
+    copy_release_metadata "$release_sources_dir/$role_basename.manifest.gz"
+    copy_release_metadata "$release_sources_dir/$role_basename.osrelease"
+    copy_release_metadata "$release_sources_dir/$role_basename.repart.tar"
 done
