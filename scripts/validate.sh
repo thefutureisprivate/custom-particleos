@@ -540,6 +540,7 @@ require_fixed "enable postgresql.service" "$mail_preset"
 require_fixed "enable particleos-stalwart-database.service" "$mail_preset"
 require_fixed "enable stalwart.service" "$mail_preset"
 require_fixed "enable particleos-mailserver-health.service" "$mail_preset"
+reject_fixed "network-online.target" "$mail_health_unit"
 require_fixed "Requires=nftables.service particleos-module-lockdown.service postgresql.service particleos-stalwart-database.service systemd-resolved.service" "$mail_dropin"
 require_fixed "After=nftables.service particleos-module-lockdown.service postgresql.service particleos-stalwart-database.service systemd-resolved.service" "$mail_dropin"
 require_fixed "StartLimitIntervalSec=5min" "$mail_dropin"
@@ -629,6 +630,10 @@ require_fixed "socket cgroupv2 level 2 @sysupdate_cgroups tcp dport 443 ct state
 require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups"     mkosi.extra/usr/lib/systemd/system/systemd-sysupdate-update.service.d/40-particleos-egress.conf
 require_fixed "enable systemd-sysupdate-update.timer"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
+network_wait_dropin=mkosi.extra/usr/lib/systemd/system/systemd-networkd-wait-online.service.d/40-particleos-nonblocking.conf
+require_fixed "disable systemd-networkd-wait-online.service" "$base_preset"
+reject_fixed "enable systemd-networkd-wait-online.service" "$base_preset"
+require_fixed "ConditionPathExists=/run/particleos-require-network-online" "$network_wait_dropin"
 rollback_dropin=mkosi.extra/usr/lib/systemd/system/systemd-boot-check-no-failures.service.d/40-particleos-rollback.conf
 bless_rollback_dropin=mkosi.extra/usr/lib/systemd/system/systemd-bless-boot.service.d/40-particleos-rollback.conf
 web_health_unit="$web_extra/usr/lib/systemd/system/particleos-webserver-health.service"

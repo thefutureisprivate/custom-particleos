@@ -2,7 +2,10 @@
 
 # Headless networking.
 enable systemd-networkd.service
-enable systemd-networkd-wait-online.service
+# A VPS can be healthy while its provider network is temporarily unavailable.
+# Mail and web daemons bind local/wildcard sockets without carrier, so boot and
+# rollback health must never wait for an external network.
+disable systemd-networkd-wait-online.service
 enable systemd-resolved.service
 disable NetworkManager.service
 disable NetworkManager-wait-online.service

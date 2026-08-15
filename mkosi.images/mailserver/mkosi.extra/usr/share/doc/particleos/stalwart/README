@@ -46,7 +46,11 @@ makes mail resolution fail closed.
 Boot-health verifies only the local systemd-resolved service and TCP proxy
 contract. It deliberately does not query an Internet name: Cloudflare or
 network outages are runtime delivery failures handled by normal mail retry
-semantics and must not consume counted OS boot attempts.
+semantics and must not consume counted OS boot attempts. ParticleOS disables
+`systemd-networkd-wait-online.service`; Stalwart and the counted health gate
+start from local dependencies and bind their sockets even when the VPS has no
+carrier or address. A unit condition also makes vendor or stale enablement of
+the wait service non-blocking. Network configuration continues asynchronously.
 
 The WebUI is a checksum-pinned RPM payload in immutable /usr. Stalwart rejects
 every application-bundle URL except file:///usr/share/stalwart/webui.zip and
