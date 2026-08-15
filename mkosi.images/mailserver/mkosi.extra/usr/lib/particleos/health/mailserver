@@ -23,7 +23,10 @@ tcp_connect() {
     local address=$1
     local port=$2
 
-    exec 3<>"/dev/tcp/$address/$port"
+    # Preserve the connect failure. Without the explicit return, the
+    # successful descriptor close below becomes the function's status and a
+    # closed port is incorrectly reported as reachable.
+    exec 3<>"/dev/tcp/$address/$port" || return 1
     exec 3>&- 3<&-
 }
 
