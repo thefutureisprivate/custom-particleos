@@ -142,6 +142,13 @@ and its
    compatibility path. The image package set requests Fedora's `kernel-core`;
    no COPR or custom kernel repository is configured.
 
+   Stalwart is the exception: build its RPM only in the dedicated
+   `stalwart_Fedora_44` repository, which inherits from stable Fedora updates
+   without the live `system:systemd` path. Keep that repository first in the
+   image repository search order. This preserves normal OBS dependency
+   rebuilds while preventing unrelated systemd CI metadata churn from
+   continuously rebuilding the mail server or blocking image publication.
+
 5. Link the official `system:systemd/ipe-policy` package into the project and
    enable its Fedora 44 build. OBS then signs that policy with the same project
    certificate used by ParticleOS:
