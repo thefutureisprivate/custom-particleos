@@ -49,7 +49,7 @@ declare -A role_image_ids=(
 )
 declare -A role_packages=(
     [webserver]="certbot nginx-core"
-    [mailserver]="openssl postgresql-server stalwart"
+    [mailserver]="openssl postgresql-contrib postgresql-server stalwart"
 )
 base_config=mkosi.images/base/mkosi.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
@@ -486,6 +486,7 @@ postgres_prepare_recovery="$mail_extra/usr/lib/particleos/postgresql/prepare-rec
 postgres_pitr_unit="$mail_extra/usr/lib/systemd/system/particleos-postgresql-pitr-enable.service"
 postgres_basebackup_unit="$mail_extra/usr/lib/systemd/system/particleos-postgresql-basebackup.service"
 postgres_basebackup_timer="$mail_extra/usr/lib/systemd/system/particleos-postgresql-basebackup.timer"
+postgres_tmpfiles="$mail_extra/usr/lib/tmpfiles.d/particleos-postgresql.conf"
 postgres_backup_readme="$mail_extra/usr/share/doc/particleos/stalwart/BACKUP-RECOVERY.md"
 stalwart_db_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-database.service"
 stalwart_db_setup="$mail_extra/usr/lib/particleos/postgresql/provision-stalwart"
@@ -604,6 +605,9 @@ require_fixed "ExecStart=/usr/lib/particleos/postgresql/enable-pitr" "$postgres_
 require_fixed "ExecStart=/usr/lib/particleos/postgresql/basebackup" "$postgres_pitr_unit"
 require_fixed "ExecStart=/usr/lib/particleos/postgresql/basebackup" "$postgres_basebackup_unit"
 require_fixed "OnCalendar=weekly" "$postgres_basebackup_timer"
+require_fixed "d /var/lib/pgsql/backup 0700 postgres postgres -" "$postgres_tmpfiles"
+require_fixed "postgresql-contrib" mkosi.images/mailserver/mkosi.conf
+require_fixed "postgresql-contrib" "$obs_recipe"
 require_fixed "never removes backups or WAL" "$postgres_backup_readme"
 require_fixed "data.pre-pitr" "$postgres_backup_readme"
 require_fixed "Requires=postgresql.service" "$stalwart_db_unit"

@@ -53,6 +53,11 @@ Create an on-demand verified base backup with:
 
     run0 systemctl start particleos-postgresql-basebackup.service
 
+Each base backup is checked against its SHA-256 manifest and its required WAL
+is parsed with the matching PostgreSQL `pg_waldump`. The latter is why the
+otherwise optional `postgresql-contrib` RPM is part of the mail image. No
+contrib extension is created in either database.
+
 Regularly copy a complete recovery set to an isolated test system and perform
 the restore below. A backup that has only been created, but never restored and
 protocol-tested, is not considered verified operationally.
