@@ -97,7 +97,9 @@ TCP proxy stub so Stalwart can validate preserved DNSSEC records for DANE over
 the host's authenticated Cloudflare DoT path. A dedicated SELinux domain
 independently enforces the selected ports, local database socket, and labelled
 file access. Provisioning instructions are installed at
-`/usr/share/doc/particleos/stalwart/README`.
+`/usr/share/doc/particleos/stalwart/README`; the adjacent
+`BACKUP-RECOVERY.md` defines continuous WAL archiving, verified base backups,
+retention constraints, and point-in-time recovery.
 
 See [docs/SECURITY-MODEL.md](./docs/SECURITY-MODEL.md) for trust boundaries,
 GrapheneOS hardening coverage, and deliberate exclusions.
@@ -434,8 +436,11 @@ New UKIs start with three boot attempts. On a counted boot, the generic failed
 unit checker must complete before `boot-complete.target`; the webserver role
 also validates nginx's configuration and an actual HTTP response on its local
 port 80 listener. The mailserver role verifies PostgreSQL peer authentication,
-strict DNS resolution, Stalwart, and the packaged WebUI on its loopback-only
-bootstrap listener. A failed gate is not blessed and reboots the counted slot.
+Stalwart's post-migration mode, and the local systemd-resolved interface without
+depending on Internet availability. It then performs bounded local protocol
+checks: the recovery WebUI while unprovisioned, or SMTP/SMTPS/IMAPS/HTTPS, TLS
+certificates, security headers, and the exact packaged WebUI in normal mode. A
+failed gate is not blessed and reboots the counted slot.
 After three failed attempts, systemd-boot selects the previous blessed UKI and
 A/B `/usr` set. The forced-reboot action is conditional on the
 `LoaderBootCountPath` EFI variable, so an already blessed normal boot cannot

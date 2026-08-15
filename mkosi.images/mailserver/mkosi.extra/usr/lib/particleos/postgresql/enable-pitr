@@ -1,0 +1,24 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+pgdata=/var/lib/pgsql/data
+backup_root=/var/lib/pgsql/backup
+
+/usr/bin/mountpoint --quiet "$backup_root" || {
+    echo "$backup_root must be a separate mounted filesystem" >&2
+    exit 1
+}
+[[ $(/usr/bin/stat --format=%U "$backup_root") == postgres ]]
+[[ $(/usr/bin/stat --format=%G "$backup_root") == postgres ]]
+[[ $(/usr/bin/stat --format=%a "$backup_root") == 700 ]]
+if [[ $(/usr/bin/stat --format=%C "$backup_root") != *:postgresql_db_t:* ]]; then
+    echo "$backup_root must be labelled postgresql_db_t (run restorecon after mounting it)" >&2
+    exit 1
+fi
+
+/usr/bin/mkdir --parents "$backup_root/base" "$backup_root/wal"
+/usr/bin/chmod 0700 "$backup_root/base" "$backup_root/wal"
+: >"$pgdata/.particleos-pitr-enabled"
+/usr/bin/chmod 0600 "$pgdata/.particleos-pitr-enabled"

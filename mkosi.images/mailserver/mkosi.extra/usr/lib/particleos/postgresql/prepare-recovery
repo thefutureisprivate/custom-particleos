@@ -1,0 +1,68 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+backup_root=/var/lib/pgsql/backup
+pgdata=/var/lib/pgsql/data
+requested_base=${1:?usage: prepare-recovery BASE_DIRECTORY [UTC_TARGET|latest]}
+target=${2:-latest}
+
+[[ $EUID -eq 0 ]] || {
+    echo 'prepare-recovery must be launched through run0' >&2
+    exit 1
+}
+/usr/bin/mountpoint --quiet "$backup_root"
+if /usr/bin/systemctl --quiet is-active postgresql.service stalwart.service; then
+    echo 'stop Stalwart and PostgreSQL before preparing recovery' >&2
+    exit 1
+fi
+if [[ $target != latest &&
+        ! $target =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+    echo 'the recovery target must be latest or UTC in YYYY-MM-DDTHH:MM:SSZ form' >&2
+    exit 64
+fi
+
+base=$(/usr/bin/readlink --canonicalize-existing "$requested_base")
+case $base in
+    "$backup_root"/base/*) ;;
+    *)
+        echo "the base backup must be below $backup_root/base" >&2
+        exit 64
+        ;;
+esac
+[[ -f $base/backup_manifest ]]
+/usr/bin/pg_verifybackup "$base"
+
+stamp=$(/usr/bin/date --utc +%Y%m%dT%H%M%SZ)
+staging=/var/lib/pgsql/data.pitr-staging.$$
+quarantine=/var/lib/pgsql/data.pre-pitr.$stamp
+[[ ! -e $staging && ! -e $quarantine ]]
+trap 'rm -rf --one-file-system -- "$staging"' EXIT
+/usr/bin/cp --archive --reflink=auto -- "$base" "$staging"
+/usr/bin/rm --force -- "$staging/postmaster.pid" "$staging/standby.signal"
+/usr/bin/mkdir --parents "$staging/conf.d"
+
+{
+    printf '%s\n' \
+        "restore_command = '/usr/lib/particleos/postgresql/restore-wal \"%f\" \"%p\"'" \
+        "recovery_target_timeline = 'latest'" \
+        "recovery_target_action = 'promote'"
+    if [[ $target != latest ]]; then
+        printf "recovery_target_time = '%s'\n" "$target"
+    fi
+} >"$staging/conf.d/particleos-recovery.conf"
+/usr/bin/chmod 0600 "$staging/conf.d/particleos-recovery.conf"
+: >"$staging/recovery.signal"
+/usr/bin/chmod 0600 "$staging/recovery.signal"
+
+/usr/bin/mv -- "$pgdata" "$quarantine"
+if ! /usr/bin/mv -- "$staging" "$pgdata"; then
+    /usr/bin/mv -- "$quarantine" "$pgdata"
+    exit 1
+fi
+trap - EXIT
+/usr/sbin/restorecon -RF "$pgdata"
+/usr/bin/sync --data /var/lib/pgsql
+printf 'Recovery prepared. Previous cluster retained at %s\n' "$quarantine"
+printf 'Start PostgreSQL, verify the target, then remove conf.d/particleos-recovery.conf.\n'

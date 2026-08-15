@@ -50,8 +50,13 @@ receive three attempts. During a counted boot,
 `systemd-boot-check-no-failures.service` blocks `boot-complete.target` if a
 unit failed; the webserver also requires a valid nginx configuration and a
 local HTTP response. The mailserver requires a peer-authenticated PostgreSQL
-query, working strict DNS resolution, Stalwart, and a successful response from
-its packaged WebUI. A failed gate triggers a reboot without blessing that slot,
+query, Stalwart's post-migration mode marker, a working local resolver
+interface, and successful bounded application exchanges. Recovery mode is
+checked through the loopback WebUI; normal mode checks SMTP, SMTPS, IMAPS and
+HTTPS on both IP families, certificate validity, browser headers, and the exact
+packaged WebUI digest. Internet DNS is deliberately excluded because a network
+or Cloudflare outage is not evidence of an invalid OS image. A failed gate
+triggers a reboot without blessing that slot,
 so systemd-boot eventually selects the previous blessed UKI and A/B usr set.
 Both forced-reboot actions require the `LoaderBootCountPath` EFI variable; they
 cannot turn a normal, already blessed boot into a permanent reboot loop.
@@ -388,6 +393,15 @@ this appliance profile and would require a new signed image policy, strict TLS,
 credentials, health checks, SELinux rules, and a destination-specific firewall
 rule.
 
+PostgreSQL permits only peer-authenticated local connections by the `postgres`
+role to databases and the physical-replication protocol needed by
+`pg_basebackup`, and by the `stalwart` role to the `stalwart` database; all
+other local users are explicitly rejected. Operator-enabled PITR uses a
+verified `pg_basebackup` plus continuous WAL on a separately mounted,
+encrypted, `postgresql_db_t`-labelled filesystem. Once activated, loss of that
+mount makes archiving fail and retains WAL locally. Automated retention is
+intentionally absent so no WAL required by a retained base backup is deleted.
+
 Configuration under `/usr/lib/particleos` changes only through a new signed
 image. Certbot state and TLS private keys are owned by the non-login `certbot`
 account. nginx's root master reads certificates during start/reload; workers do
@@ -438,15 +452,22 @@ firewall and irreversible module lockdown.
 
 Stalwart's bootstrap/recovery HTTP listener on port 8080 is intentionally
 reachable only through localhost. Operators provision it through the console
-or an SSH tunnel, use Ed25519 DKIM keys, and configure the production hostname,
-TLS, domains, and abuse policy before accepting production mail. The image
+or an SSH tunnel using a random temporary recovery administrator from the
+protected journal. The service remains in recovery mode until PostgreSQL has a
+non-expired password-bearing administrator, then selects its normal listener
+profile on restart. Operators use Ed25519 DKIM keys and configure the production
+hostname, TLS, domains, and abuse policy before accepting production mail. The image
 bundles PostgreSQL because it is an enforced local dependency, but disables its
 network listeners and uses Unix peer authentication with no database secret.
 
 The Stalwart WebUI is a checksum-pinned release asset inside the signed RPM and
 dm-verity-protected `/usr` payload. The patched server accepts only its exact
 `file:///usr/share/stalwart/webui.zip` URL, so registry updates cannot recreate
-the upstream first-boot HTTPS downloader. POP3 and ManageSieve listeners are
+the upstream first-boot HTTPS downloader. It reads that RPM file on every
+process start rather than serving an Application-ID-keyed mutable blob cache,
+making WebUI and OS activation atomic. Database migration errors are returned
+as process failures so systemd restart and failed-unit handling remain active.
+POP3 and ManageSieve listeners are
 absent from the initial registry and their ports are absent from nftables. The
 mail boot-health gate also rejects unexpected POP3, plaintext IMAP/submission,
 or ManageSieve listeners. Fedora assigns IMAPS TCP 993 to its historical

@@ -94,10 +94,17 @@ if [[ $IMAGE_ID == ParticleOS-Mailserver ]]; then
     # The setup service uses NoNewPrivileges. Label its appliance-owned entry
     # point with Fedora's PostgreSQL executable type so the complete one-shot,
     # including its post-init configuration writes, runs in postgresql_t.
-    postgresql_initializer_context='/usr/lib/particleos/postgresql/initialize -- system_u:object_r:postgresql_exec_t:s0'
-    if ! grep -Fqx "$postgresql_initializer_context" "$selinux_local_contexts"; then
-        printf '%s\n' "$postgresql_initializer_context" >>"$selinux_local_contexts"
-    fi
+    for postgresql_entrypoint in \
+        initialize \
+        enable-pitr \
+        basebackup \
+        archive-wal \
+        restore-wal; do
+        postgresql_entrypoint_context="/usr/lib/particleos/postgresql/$postgresql_entrypoint -- system_u:object_r:postgresql_exec_t:s0"
+        if ! grep -Fqx "$postgresql_entrypoint_context" "$selinux_local_contexts"; then
+            printf '%s\n' "$postgresql_entrypoint_context" >>"$selinux_local_contexts"
+        fi
+    done
 fi
 selinux_factory_link_context='/etc/selinux -l system_u:object_r:etc_t:s0'
 if ! grep -Fqx "$selinux_factory_link_context" "$selinux_local_contexts"; then

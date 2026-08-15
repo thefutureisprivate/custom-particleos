@@ -12,6 +12,7 @@ FailureAction=reboot
 
 [Service]
 Type=oneshot
+TimeoutStartSec=3min
 User=stalwart
 Group=stalwart
 ExecStart=/usr/lib/particleos/health/mailserver

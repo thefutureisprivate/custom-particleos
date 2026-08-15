@@ -1,6 +1,23 @@
 #!/bin/bash
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -euo pipefail
+umask 0077
+
+# Stable failure classes make a rollback diagnosable from the previous boot's
+# journal instead of collapsing every fault into a generic socket failure.
+readonly LISTENER_ABSENT=10
+readonly TLS_FAILURE=20
+readonly CERTIFICATE_FAILURE=30
+readonly PROTOCOL_FAILURE=40
+readonly DATASTORE_FAILURE=50
+readonly WEBUI_MISMATCH=60
+
+fail() {
+    local status=$1
+    shift
+    printf 'particleos-mail-health[%d]: %s\n' "$status" "$*" >&2
+    exit "$status"
+}
 
 tcp_connect() {
     local address=$1
@@ -10,86 +27,257 @@ tcp_connect() {
     exec 3>&- 3<&-
 }
 
-webui_responds() {
+wait_for_listener() {
     local address=$1
-    local status
+    local port=$2
 
-    exec 3<>"/dev/tcp/$address/8080"
-    printf 'HEAD /admin HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
-    IFS= read -r status <&3 || true
-    exec 3>&- 3<&-
-    [[ $status =~ ^HTTP/[0-9.]+\ [23][0-9][0-9] ]]
+    for ((attempt = 0; attempt < 30; attempt++)); do
+        tcp_connect "$address" "$port" 2>/dev/null && return
+        /usr/bin/sleep 1
+    done
+    fail "$LISTENER_ABSENT" "listener absent on $address:$port"
 }
 
+openssl_target() {
+    local address=$1
+    local port=$2
+
+    if [[ $address == *:* ]]; then
+        printf '[%s]:%s' "$address" "$port"
+    else
+        printf '%s:%s' "$address" "$port"
+    fi
+}
+
+tls_and_certificate_check() {
+    local address=$1
+    local port=$2
+    local target handshake certificate
+
+    target=$(openssl_target "$address" "$port")
+    handshake=$health_tmp/handshake-${address//:/_}-$port
+    certificate=$health_tmp/certificate-${address//:/_}-$port.pem
+    if ! /usr/bin/timeout 8 /usr/bin/openssl s_client \
+            -connect "$target" -servername localhost -showcerts \
+            </dev/null >"$handshake" 2>&1; then
+        fail "$TLS_FAILURE" "TLS failure on $address:$port"
+    fi
+
+    /usr/bin/awk '
+        /-----BEGIN CERTIFICATE-----/ { copying = 1 }
+        copying { print }
+        /-----END CERTIFICATE-----/ { exit }
+    ' "$handshake" >"$certificate"
+    if [[ ! -s $certificate ]] ||
+            ! /usr/bin/openssl x509 -in "$certificate" -noout -checkend 0 \
+                >/dev/null 2>&1; then
+        fail "$CERTIFICATE_FAILURE" \
+            "certificate failure on $address:$port (missing, malformed, or expired)"
+    fi
+}
+
+smtp_plain_check() {
+    local address=$1
+    local greeting line ehlo_ok=false quit_reply
+
+    exec 3<>"/dev/tcp/$address/25" ||
+        fail "$LISTENER_ABSENT" "listener absent on $address:25"
+    if ! IFS= read -r -t 5 greeting <&3 || [[ ${greeting%$'\r'} != 220\ * ]]; then
+        exec 3>&- 3<&-
+        fail "$PROTOCOL_FAILURE" "SMTP greeting failure on $address:25"
+    fi
+    printf 'EHLO health.particleos.invalid\r\n' >&3
+    while IFS= read -r -t 5 line <&3; do
+        line=${line%$'\r'}
+        [[ $line == 250\ * ]] && {
+            ehlo_ok=true
+            break
+        }
+        [[ $line == 250-* ]] || break
+    done
+    [[ $ehlo_ok == true ]] || {
+        exec 3>&- 3<&-
+        fail "$PROTOCOL_FAILURE" "SMTP EHLO failure on $address:25"
+    }
+    printf 'QUIT\r\n' >&3
+    IFS= read -r -t 5 quit_reply <&3 || true
+    exec 3>&- 3<&-
+    [[ ${quit_reply%$'\r'} == 221\ * ]] ||
+        fail "$PROTOCOL_FAILURE" "SMTP QUIT failure on $address:25"
+}
+
+tls_protocol_exchange() {
+    local address=$1
+    local port=$2
+    local request=$3
+    local output=$4
+    local target
+
+    target=$(openssl_target "$address" "$port")
+    # TLS was already validated separately. This exchange is judged by the
+    # protocol response; some servers close without a final TLS close_notify.
+    printf '%b' "$request" \
+        | /usr/bin/timeout 8 /usr/bin/openssl s_client \
+            -quiet -connect "$target" -servername localhost \
+            >"$output" 2>/dev/null || true
+}
+
+smtp_tls_check() {
+    local address=$1
+    local output response
+
+    output=$health_tmp/smtps-${address//:/_}
+    tls_protocol_exchange "$address" 465 \
+        'EHLO health.particleos.invalid\r\nQUIT\r\n' "$output"
+    response=$(tr -d '\r' <"$output")
+    [[ $response == 220\ * && $response == *$'\n250 '* && $response == *$'\n221 '* ]] ||
+        fail "$PROTOCOL_FAILURE" "SMTPS protocol failure on $address:465"
+}
+
+imap_tls_check() {
+    local address=$1
+    local output response
+
+    output=$health_tmp/imaps-${address//:/_}
+    tls_protocol_exchange "$address" 993 \
+        'a1 CAPABILITY\r\na2 LOGOUT\r\n' "$output"
+    response=$(tr -d '\r' <"$output")
+    [[ $response == \*\ OK* && $response == *$'\n* CAPABILITY '* &&
+            $response == *$'\na1 OK '* && $response == *$'\na2 OK '* ]] ||
+        fail "$PROTOCOL_FAILURE" "IMAPS protocol failure on $address:993"
+}
+
+http_exchange() {
+    local scheme=$1
+    local address=$2
+    local port=$3
+    local path=$4
+    local output=$5
+    local request
+
+    request="GET $path HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    if [[ $scheme == https ]]; then
+        tls_protocol_exchange "$address" "$port" "$request" "$output"
+    else
+        exec 3<>"/dev/tcp/$address/$port" ||
+            fail "$LISTENER_ABSENT" "listener absent on $address:$port"
+        printf '%b' "$request" >&3
+        if ! /usr/bin/timeout 8 /usr/bin/cat <&3 >"$output"; then
+            exec 3>&- 3<&-
+            fail "$PROTOCOL_FAILURE" "HTTP response timeout on $address:$port"
+        fi
+        exec 3>&- 3<&-
+    fi
+}
+
+webui_check() {
+    local scheme=$1
+    local address=$2
+    local port=$3
+    local prefix=$4
+    local expected_file=$5
+    local response headers body status expected actual
+
+    response=$health_tmp/web-${scheme}-${address//:/_}-$port
+    headers=$response.headers
+    body=$response.body
+    http_exchange "$scheme" "$address" "$port" "/$prefix/" "$response"
+    status=$(/usr/bin/head --lines=1 "$response" | tr -d '\r')
+    [[ $status == HTTP/*\ 200\ * ]] ||
+        fail "$PROTOCOL_FAILURE" \
+            "HTTP protocol failure on $address:$port: ${status:-empty response}"
+
+    /usr/bin/sed -n '1,/^\r$/p' "$response" | tr -d '\r' >"$headers"
+    /usr/bin/sed '1,/^\r$/d' "$response" >"$body"
+    /usr/bin/grep --fixed-strings --ignore-case --quiet \
+        'content-security-policy:' "$headers" ||
+        fail "$WEBUI_MISMATCH" "WebUI CSP missing on $address:$port"
+    /usr/bin/grep --fixed-strings --ignore-case --quiet \
+        'x-content-type-options: nosniff' "$headers" ||
+        fail "$WEBUI_MISMATCH" "WebUI nosniff policy missing on $address:$port"
+    if [[ $scheme == https ]]; then
+        /usr/bin/grep --fixed-strings --ignore-case --quiet \
+            'strict-transport-security:' "$headers" ||
+            fail "$WEBUI_MISMATCH" "WebUI HSTS missing on $address:$port"
+    fi
+
+    read -r expected <"$expected_file"
+    actual=$(/usr/bin/sha256sum "$body")
+    actual=${actual%% *}
+    [[ $actual == "$expected" ]] ||
+        fail "$WEBUI_MISMATCH" \
+            "WebUI mismatch on $address:$port (expected $expected, got $actual)"
+}
+
+health_tmp=$(/usr/bin/mktemp --directory)
+trap 'rm -rf --one-file-system -- "$health_tmp"' EXIT
+
 database_ready=false
-for ((attempt = 0; attempt < 60; attempt++)); do
-    result="$(/usr/bin/psql --no-password --no-psqlrc \
+for ((attempt = 0; attempt < 30; attempt++)); do
+    result=$(/usr/bin/psql --no-password --no-psqlrc \
         --host=/run/postgresql --username=stalwart --dbname=stalwart \
-        --tuples-only --no-align --command='SELECT 1' 2>/dev/null || true)"
+        --tuples-only --no-align --command='SELECT 1' 2>/dev/null || true)
     if [[ $result == 1 ]]; then
         database_ready=true
         break
     fi
-    sleep 1
+    /usr/bin/sleep 1
 done
-if [[ $database_ready != true ]]; then
-    echo 'Stalwart cannot authenticate to its local PostgreSQL database by peer identity' >&2
-    exit 1
-fi
+[[ $database_ready == true ]] ||
+    fail "$DATASTORE_FAILURE" \
+        'datastore failure: Stalwart peer authentication or SELECT failed'
 
-dns_ready=false
-for ((attempt = 0; attempt < 60; attempt++)); do
-    if /usr/bin/resolvectl --cache=no --legend=no query cloudflare.com \
-            >/dev/null 2>&1; then
-        dns_ready=true
+# Boot success depends only on the local resolver contract. External DNS and
+# Cloudflare DoT availability are runtime dependencies with normal mail retry
+# semantics; a transient provider outage must never consume update boot tries.
+wait_for_listener 127.0.0.54 53
+/usr/bin/resolvectl --legend=no query localhost >/dev/null 2>&1 ||
+    fail "$PROTOCOL_FAILURE" 'local systemd-resolved protocol failure'
+
+mode=
+for ((attempt = 0; attempt < 30; attempt++)); do
+    if [[ -s /run/stalwart/particleos-mode ]]; then
+        read -r mode </run/stalwart/particleos-mode
         break
     fi
-    sleep 1
+    /usr/bin/sleep 1
 done
-if [[ $dns_ready != true ]]; then
-    echo 'strict systemd-resolved DNS-over-TLS/DNSSEC resolution is unavailable' >&2
-    exit 1
-fi
+[[ $mode == recovery || $mode == normal ]] ||
+    fail "$PROTOCOL_FAILURE" 'Stalwart did not publish a valid post-migration mode'
 
-listeners_ready=false
-for ((attempt = 0; attempt < 60; attempt++)); do
-    listeners_ready=true
+if [[ $mode == recovery ]]; then
     for address in 127.0.0.1 ::1; do
+        wait_for_listener "$address" 8080
+        webui_check http "$address" 8080 admin \
+            /usr/share/stalwart/webui-admin.sha256
         for port in 25 443 465 993; do
-            if ! tcp_connect "$address" "$port" 2>/dev/null; then
-                listeners_ready=false
+            if tcp_connect "$address" "$port" 2>/dev/null; then
+                fail "$PROTOCOL_FAILURE" \
+                    "public mail listener unexpectedly active during recovery on $address:$port"
             fi
         done
     done
-    if [[ $listeners_ready == true ]]; then
-        break
-    fi
-    sleep 1
-done
-if [[ $listeners_ready != true ]]; then
-    echo 'Stalwart did not bind every required public listener on IPv4 and IPv6' >&2
-    exit 1
-fi
-
-webui_ready=false
-for ((attempt = 0; attempt < 60; attempt++)); do
-    if webui_responds 127.0.0.1 2>/dev/null &&
-            webui_responds ::1 2>/dev/null; then
-        webui_ready=true
-        break
-    fi
-    sleep 1
-done
-if [[ $webui_ready != true ]]; then
-    echo 'Stalwart did not serve its packaged WebUI on the loopback bootstrap listener' >&2
-    exit 1
+else
+    for address in 127.0.0.1 ::1; do
+        for port in 25 443 465 993; do
+            wait_for_listener "$address" "$port"
+        done
+        smtp_plain_check "$address"
+        for port in 443 465 993; do
+            tls_and_certificate_check "$address" "$port"
+        done
+        smtp_tls_check "$address"
+        imap_tls_check "$address"
+        webui_check https "$address" 443 account \
+            /usr/share/stalwart/webui-account.sha256
+    done
 fi
 
 for address in 127.0.0.1 ::1; do
     for port in 110 143 587 995 4190; do
         if tcp_connect "$address" "$port" 2>/dev/null; then
-            echo "forbidden plaintext, POP, or ManageSieve listener is active on $address:$port" >&2
-            exit 1
+            fail "$PROTOCOL_FAILURE" \
+                "forbidden plaintext, POP, or ManageSieve listener active on $address:$port"
         fi
     done
 done

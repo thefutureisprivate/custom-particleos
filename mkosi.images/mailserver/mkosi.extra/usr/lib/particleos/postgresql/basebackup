@@ -1,0 +1,50 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+pgdata=/var/lib/pgsql/data
+backup_root=/var/lib/pgsql/backup
+enabled_marker=$pgdata/.particleos-pitr-enabled
+
+[[ -e $enabled_marker ]]
+/usr/bin/mountpoint --quiet "$backup_root"
+[[ -d $backup_root/base && -d $backup_root/wal ]]
+
+# Prove that the archive path is live before creating a recovery point. A base
+# backup without the following WAL chain is not advertised as PITR-capable.
+archive_mode=$(/usr/bin/psql --no-password --no-psqlrc \
+    --host=/run/postgresql --username=postgres --dbname=postgres \
+    --tuples-only --no-align --command='SHOW archive_mode')
+[[ $archive_mode == on ]]
+segment=$(/usr/bin/psql --no-password --no-psqlrc \
+    --host=/run/postgresql --username=postgres --dbname=postgres \
+    --tuples-only --no-align --command='SELECT pg_walfile_name(pg_switch_wal())')
+for ((attempt = 0; attempt < 60; attempt++)); do
+    [[ -f $backup_root/wal/$segment ]] && break
+    /usr/bin/sleep 1
+done
+[[ -f $backup_root/wal/$segment ]]
+
+timestamp=$(/usr/bin/date --utc +%Y%m%dT%H%M%SZ)
+partial=$backup_root/base/$timestamp.partial
+destination=$backup_root/base/$timestamp
+[[ ! -e $partial && ! -e $destination ]]
+trap 'rm -rf --one-file-system -- "$partial"' EXIT
+/usr/bin/mkdir "$partial"
+
+/usr/bin/pg_basebackup \
+    --host=/run/postgresql \
+    --username=postgres \
+    --pgdata="$partial" \
+    --format=plain \
+    --wal-method=stream \
+    --checkpoint=fast \
+    --manifest-checksums=SHA256 \
+    --no-password
+/usr/bin/pg_verifybackup "$partial"
+/usr/bin/sync --data "$partial/backup_manifest"
+/usr/bin/mv -- "$partial" "$destination"
+trap - EXIT
+/usr/bin/sync --data "$backup_root/base"
+echo "$destination"

@@ -1,17 +1,21 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 [Unit]
-Description=Initialize the ParticleOS PostgreSQL cluster
-Documentation=file:/usr/share/doc/particleos/stalwart/README
-Before=postgresql.service
+Description=Enable PostgreSQL continuous archiving and create the first base backup
+Documentation=file:/usr/share/doc/particleos/stalwart/BACKUP-RECOVERY.md
+Requires=postgresql.service
+After=postgresql.service
+RequiresMountsFor=/var/lib/pgsql/backup
 
 [Service]
 Type=oneshot
 User=postgres
 Group=postgres
-ExecStart=/usr/lib/particleos/postgresql/initialize
+ExecStart=/usr/lib/particleos/postgresql/enable-pitr
+ExecStart=/usr/lib/particleos/postgresql/basebackup
 CapabilityBoundingSet=
 DevicePolicy=closed
+IPAddressDeny=any
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 NoNewPrivileges=yes

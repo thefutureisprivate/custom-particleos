@@ -7,18 +7,31 @@ creates the unprivileged stalwart database role, and authenticates the
 stalwart OS account through PostgreSQL peer authentication on
 /run/postgresql. There is no database password or environment file.
 
-PostgreSQL, role provisioning, and Stalwart are enabled by the image. Complete
-application bootstrap as follows:
+PostgreSQL, role provisioning, and Stalwart are enabled by the image. A fresh
+registry starts with `STALWART_RECOVERY_MODE=1`; the service journal contains a
+random temporary `admin` credential which is valid only on the loopback-only
+recovery UI. Retrieve it locally with:
+
+    run0 journalctl -u stalwart.service
+
+Complete application bootstrap as follows:
 
 1. Connect through the console or an SSH tunnel to localhost:8080. Port 8080
    is intentionally never admitted by the public firewall.
 2. Create the permanent administrator and configure the production hostname,
    TLS certificates, Ed25519 DKIM keys, domains, relay policy, and abuse
    controls before accepting production mail.
-3. Keep the local HTTP bootstrap listener available on loopback: the counted
-   update-health gate uses /admin to verify the OBS-packaged WebUI, confirms
-   every public listener on IPv4 and IPv6, and rejects plaintext, POP, and
-   ManageSieve listeners before blessing a new OS slot.
+3. Restart Stalwart after creating the password-bearing administrator. The
+   ParticleOS auto-recovery policy then selects the normal protocol profile;
+   an unprovisioned registry remains in recovery mode.
+
+The counted update-health gate reads Stalwart's post-migration mode marker. In
+recovery mode it validates the database and the loopback recovery WebUI. In
+normal mode it performs bounded SMTP, SMTPS, IMAPS and HTTPS exchanges on IPv4
+and IPv6, validates each TLS certificate, checks browser security headers, and
+compares the served WebUI body with the digest generated from the exact RPM
+payload. Its stable exit classes distinguish listener, TLS, certificate,
+protocol, datastore and WebUI failures.
 
 The public firewall admits only TCP 25, 443, 465, and 993. POP3, ManageSieve,
 plaintext client protocols, PostgreSQL, and bootstrap TCP 8080 are closed.
@@ -30,9 +43,19 @@ cross authenticated Cloudflare DNS-over-TLS while Stalwart validates the
 preserved DNSSEC records locally for DANE. Blocked DoT or failed validation
 makes mail resolution fail closed.
 
+Boot-health verifies only the local systemd-resolved service and TCP proxy
+contract. It deliberately does not query an Internet name: Cloudflare or
+network outages are runtime delivery failures handled by normal mail retry
+semantics and must not consume counted OS boot attempts.
+
 The WebUI is a checksum-pinned RPM payload in immutable /usr. Stalwart rejects
-every application-bundle URL except file:///usr/share/stalwart/webui.zip, so
-the WebUI cannot update outside the signed OBS and system-update supply chain.
+every application-bundle URL except file:///usr/share/stalwart/webui.zip and
+reloads that file on every process start instead of consulting its mutable blob
+cache, so the WebUI is atomic with the signed OBS OS update.
+
+PostgreSQL continuous WAL archiving, verified base backups, retention rules and
+the recovery procedure are documented in BACKUP-RECOVERY.md. PITR stays off
+until an operator provisions and activates a separate encrypted backup mount.
 
 The particleos_stalwart SELinux module confines the service to its labelled
 configuration, WebUI, state, logs, runtime and private temporary files; the
@@ -43,6 +66,9 @@ HTTP port types. Diagnose the mail stack with:
     run0 systemctl start particleos-mailserver-health.service
     run0 journalctl -u particleos-mailserver-health.service
     run0 -u stalwart psql --host=/run/postgresql --dbname=stalwart --command='SELECT 1'
+
+Health exit codes are 10 listener absent, 20 TLS failure, 30 certificate
+failure, 40 protocol failure, 50 datastore failure and 60 WebUI mismatch.
 
 Changing to a remote database, adding protocols, or removing the loopback
 bootstrap listener changes the appliance security and health model. Do that

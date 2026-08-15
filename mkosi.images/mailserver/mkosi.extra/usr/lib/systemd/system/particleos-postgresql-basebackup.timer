@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Schedule verified PostgreSQL PITR base backups
+Documentation=file:/usr/share/doc/particleos/stalwart/BACKUP-RECOVERY.md
+
+[Timer]
+OnCalendar=weekly
+Persistent=yes
+RandomizedDelaySec=6h
+AccuracySec=1h
+Unit=particleos-postgresql-basebackup.service
+
+[Install]
+WantedBy=timers.target

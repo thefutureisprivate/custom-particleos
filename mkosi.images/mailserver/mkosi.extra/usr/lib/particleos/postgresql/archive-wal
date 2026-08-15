@@ -1,0 +1,58 @@
+#!/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+pgdata=/var/lib/pgsql/data
+backup_root=/var/lib/pgsql/backup
+enabled_marker=$pgdata/.particleos-pitr-enabled
+source_path=${1:?missing WAL source path}
+archive_name=${2:?missing WAL archive name}
+
+# Archiving is an explicit operator choice because the destination must be an
+# independently backed, encrypted filesystem. Before activation there is no
+# recovery promise and PostgreSQL may recycle completed WAL normally.
+[[ -e $enabled_marker ]] || exit 0
+
+if [[ ! $archive_name =~ ^([0-9A-F]{24}(\.[0-9A-F]{8}\.backup)?|[0-9A-F]{8}\.history)$ ]]; then
+    echo "refusing malformed PostgreSQL archive name: $archive_name" >&2
+    exit 64
+fi
+if [[ $source_path != pg_wal/* || $source_path == *..* ||
+        ${source_path##*/} != "$archive_name" || ! -f $source_path ]]; then
+    echo "refusing PostgreSQL archive source outside PGDATA/pg_wal: $source_path" >&2
+    exit 64
+fi
+if ! /usr/bin/mountpoint --quiet "$backup_root"; then
+    echo "PITR is enabled but $backup_root is not a mount point; retaining WAL for retry" >&2
+    exit 1
+fi
+
+wal_root=$backup_root/wal
+destination=$wal_root/$archive_name
+[[ -d $wal_root && -w $wal_root ]]
+
+if [[ -e $destination ]]; then
+    /usr/bin/cmp --silent -- "$source_path" "$destination"
+    exit
+fi
+
+temporary=$wal_root/.$archive_name.$$
+trap 'rm -f -- "$temporary"' EXIT
+/usr/bin/cp --reflink=never -- "$source_path" "$temporary"
+/usr/bin/chmod 0600 "$temporary"
+/usr/bin/sync --data "$temporary"
+
+# A hard link publishes the completed segment atomically and refuses to
+# replace an existing archive object. The single PostgreSQL archiver normally
+# makes this uncontended; the comparison above handles ordinary retries.
+if ! /usr/bin/ln -- "$temporary" "$destination"; then
+    if [[ ! -e $destination ]] ||
+            ! /usr/bin/cmp --silent -- "$temporary" "$destination"; then
+        echo "failed to publish WAL archive object: $archive_name" >&2
+        exit 1
+    fi
+fi
+/usr/bin/rm -- "$temporary"
+trap - EXIT
+/usr/bin/sync --data "$wal_root"
