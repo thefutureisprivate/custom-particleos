@@ -1,0 +1,17 @@
+; SPDX-License-Identifier: LGPL-2.1-or-later
+
+; The counted-boot mail health service runs directly under PID 1's init_t
+; domain. Permit only the SELinux port-name checks required for its bounded
+; loopback protocol probes. IPAddressAllow=localhost and IPAddressDeny=any in
+; the unit independently prevent these grants from authorizing a connection
+; to a remote service.
+;
+; Include the disabled protocol port types as well: the probe must be able to
+; distinguish a forbidden listener from an SELinux-denied connect attempt.
+(block particleos_mail_health
+  (allow .init_t .smtp_port_t (tcp_socket (name_connect)))
+  (allow .init_t .cyrus_imapd_port_t (tcp_socket (name_connect)))
+  (allow .init_t .pop_port_t (tcp_socket (name_connect)))
+  (allow .init_t .http_port_t (tcp_socket (name_connect)))
+  (allow .init_t .http_cache_port_t (tcp_socket (name_connect)))
+  (allow .init_t .sieve_port_t (tcp_socket (name_connect))))

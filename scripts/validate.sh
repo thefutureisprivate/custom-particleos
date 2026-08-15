@@ -692,6 +692,19 @@ require_fixed "/run/stalwart/particleos-mode" "$mail_health_check"
 require_fixed 'exec 3<>"/dev/tcp/$address/$port" || return 1' "$mail_health_check"
 require_fixed "for address in 127.0.0.1 ::1" "$mail_health_check"
 require_fixed "for port in 110 143 587 995 4190" "$mail_health_check"
+mail_health_policy="$mail_extra/usr/lib/particleos/selinux/particleos_mail_health.cil"
+require_fixed "/usr/lib/particleos/selinux/particleos_mail_health.cil" \
+    mkosi.scripts/particleos.postinst.chroot
+for mail_health_port_type in \
+    smtp_port_t \
+    cyrus_imapd_port_t \
+    pop_port_t \
+    http_port_t \
+    http_cache_port_t \
+    sieve_port_t; do
+    require_fixed ".init_t .$mail_health_port_type (tcp_socket (name_connect))" \
+        "$mail_health_policy"
+done
 require_fixed 'oifname "lo" accept' "$base_firewall"
 
 closed_firewall=mkosi.images/dnsserver/mkosi.extra/usr/lib/particleos/nftables-role.nft
