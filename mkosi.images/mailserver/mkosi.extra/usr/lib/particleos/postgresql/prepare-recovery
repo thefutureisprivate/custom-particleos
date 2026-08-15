@@ -55,6 +55,9 @@ trap 'rm -rf --one-file-system -- "$staging"' EXIT
 /usr/bin/chmod 0600 "$staging/conf.d/particleos-recovery.conf"
 : >"$staging/recovery.signal"
 /usr/bin/chmod 0600 "$staging/recovery.signal"
+/usr/bin/chown postgres:postgres \
+    "$staging/conf.d/particleos-recovery.conf" \
+    "$staging/recovery.signal"
 
 /usr/bin/mv -- "$pgdata" "$quarantine"
 if ! /usr/bin/mv -- "$staging" "$pgdata"; then
