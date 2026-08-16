@@ -5,9 +5,7 @@ umask 0077
 
 [[ ${IMAGE_ID:?} == ParticleOS-Mailserver ]]
 
-config_root=$(realpath -- "$(dirname -- "${BASH_SOURCE[0]}")/..")
-readonly config_root
-readonly metadata_file=$config_root/mkosi.resources/stalwart-seed/release
+readonly metadata_file=${SRCDIR:?}/mkosi.resources/stalwart-seed/release
 readonly sources_dir=/usr/src/packages/SOURCES
 readonly destination_dir=$BUILDROOT/usr/lib/particleos/stalwart/seed
 

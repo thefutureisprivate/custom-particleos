@@ -333,6 +333,8 @@ done
 require_fixed "PostInstallationScripts=%D/mkosi.scripts/particleos.install-stalwart-seed" \
     mkosi.images/mailserver/mkosi.conf
 test -x "$stalwart_seed_installer" || fail "$stalwart_seed_installer must be executable"
+require_fixed 'readonly metadata_file=${SRCDIR:?}/mkosi.resources/stalwart-seed/release' \
+    "$stalwart_seed_installer"
 require_fixed "readonly sources_dir=/usr/src/packages/SOURCES" "$stalwart_seed_installer"
 require_fixed "sha256sum --check --strict" "$stalwart_seed_installer"
 require_fixed 'zstd --decompress --force --sparse -o "$temporary"' "$stalwart_seed_installer"
