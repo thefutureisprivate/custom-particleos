@@ -256,7 +256,7 @@ require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
 
 require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
-require_fixed "ImageVersion=0.16.17.14" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.15" "$stalwart_service_config"
 require_fixed "Format=disk" "$stalwart_service_config"
 require_fixed "Bootable=no" "$stalwart_service_config"
 require_fixed "SELinuxRelabel=yes" "$stalwart_service_config"
@@ -302,8 +302,10 @@ for metadata_key in \
         AUTOMATIC_UPDATE ROLLBACK_COMPATIBLE_FROM; do
     require_fixed "$metadata_key=" "$stalwart_service_release"
 done
-require_fixed "UPDATE_KIND=seed" "$stalwart_service_release"
-require_fixed "AUTOMATIC_UPDATE=no" "$stalwart_service_release"
+require_fixed "STALWART_PACKAGE_RELEASE=15" "$stalwart_service_release"
+require_fixed "UPDATE_KIND=patch" "$stalwart_service_release"
+require_fixed "AUTOMATIC_UPDATE=yes" "$stalwart_service_release"
+require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14" "$stalwart_service_release"
 require_fixed 'NAME="ParticleOS Stalwart Service Image"' \
     mkosi.scripts/stalwart-service.postinst.chroot
 require_fixed 'ID=particleos-stalwart' mkosi.scripts/stalwart-service.postinst.chroot

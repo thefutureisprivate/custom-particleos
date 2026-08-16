@@ -467,8 +467,9 @@ The selected image and retained previous image live on the encrypted persistent
 root, so an OS A/B rollback continues with the same selected Stalwart release.
 See `IMAGE-UPDATES.md` in the mailserver image for the signed host/database ABI
 contract and explicit patch-only automatic activation rules.
-Publishing a new compatible patch advances only the `stalwart-image` source
-revision and signed application repository; it does not rebuild ParticleOS.
+Publishing a new compatible patch advances only the `stalwart-image-updates`
+source revision and signed application repository; it does not rebuild
+ParticleOS.
 The OS seed remains a recovery baseline. Minor/major or migration-bearing
 images must first gain a reviewed database-aware transition and rollback path.
 
