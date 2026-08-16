@@ -849,6 +849,8 @@ require_fixed "OS A/B updates and rollbacks never" "$stalwart_image_readme"
 require_fixed "stalwart_image_manager_t" "$stalwart_image_readme"
 require_fixed 'printf '\''%s\n'\'' "$particleos_hostname" >/etc/hostname' \
     mkosi.scripts/particleos.postinst.chroot
+require_fixed "C /etc/hostname 0644 root root - /usr/share/factory/etc/hostname" \
+    mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 require_fixed "UPDATE_KIND=patch" "$stalwart_image_readme"
 require_fixed "database-aware migration" "$stalwart_image_readme"
 require_fixed "meta skuid systemd-resolve ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 853 accept" "$base_firewall"
