@@ -21,3 +21,16 @@ install -d -m 0700 /var/lib/stalwart /var/log/stalwart
 
 grep -Fqx 'IMAGE_ID=ParticleOS-Stalwart' /usr/lib/particleos/stalwart/release
 grep -Fqx "IMAGE_VERSION=$IMAGE_VERSION" /usr/lib/particleos/stalwart/release
+
+# The Fedora generic-release package is only a build substrate. Give the
+# sealed DDI an explicit, minimal identity; mkosi appends IMAGE_ID and
+# IMAGE_VERSION before the finalizer runs.
+cat >/usr/lib/os-release <<EOF
+NAME="ParticleOS Stalwart Service Image"
+ID=particleos-stalwart
+ID_LIKE="particleos fedora"
+VERSION="$IMAGE_VERSION"
+VERSION_ID="$IMAGE_VERSION"
+PRETTY_NAME="ParticleOS Stalwart Service Image $IMAGE_VERSION"
+HOME_URL="https://github.com/thefutureisprivate/custom-particleos/"
+EOF

@@ -5,6 +5,7 @@ umask 0077
 
 readonly state_dir=/var/lib/particleos/stalwart
 readonly images_dir=$state_dir/images
+readonly staging_dir=$state_dir/staging
 readonly seed_dir=/usr/lib/particleos/stalwart/seed
 readonly host_abi_file=/usr/lib/particleos/stalwart/host-abi
 readonly image_policy='root=verity+signed+read-only-on+erofs:=absent'
@@ -199,6 +200,18 @@ check_candidate_compatibility() {
     candidate_series=${candidate[STALWART_VERSION]%.*}
     [[ $candidate_series == "$current_series" ]] ||
         die 'minor/major Stalwart updates require a database-aware migration path'
+    systemd-analyze compare-versions \
+        "${candidate[STALWART_VERSION]}" ge "${current[STALWART_VERSION]}" ||
+        die 'candidate downgrades the Stalwart runtime'
+    if [[ ${candidate[STALWART_VERSION]} == "${current[STALWART_VERSION]}" ]]; then
+        systemd-analyze compare-versions \
+            "${candidate[STALWART_PACKAGE_RELEASE]}" ge \
+            "${current[STALWART_PACKAGE_RELEASE]}" ||
+            die 'candidate downgrades the Stalwart package release'
+    fi
+    systemd-analyze compare-versions \
+        "${candidate[WEBUI_VERSION]}" ge "${current[WEBUI_VERSION]}" ||
+        die 'candidate downgrades the packaged WebUI'
     [[ ${candidate[DATABASE_MIGRATION]} == none ]] ||
         die 'database-migrating Stalwart updates require a database-aware migration path'
     [[ ${candidate[DATABASE_FORMAT]} == "${current[DATABASE_FORMAT]}" ]] ||
@@ -293,7 +306,7 @@ initialize_image() {
     local current seed destination temporary
     declare -A release=()
 
-    mkdir -p "$images_dir"
+    mkdir -p "$images_dir" "$staging_dir"
     resolve_optional_link current.raw current
     if [[ -n $current ]]; then
         inspect_image "$current" release
@@ -318,8 +331,75 @@ initialize_image() {
     /usr/sbin/restorecon -F "$destination"
     sync -d "$destination"
     sync -d "$images_dir"
+    # Re-open the persistent copy through PID 1 before selecting it. This
+    # catches a failed or corrupted copy without persisting an unusable link
+    # across OS A/B rollback attempts.
+    inspect_image "$destination" release
+    check_image_identity "$destination" release
+    check_host_compatibility release
     atomic_link current.raw "$(relative_target "$destination")"
     cleanup_images
+}
+
+import_staged_image() {
+    local staged=$1
+    local destination=$images_dir/${staged##*/}
+    local temporary=$images_dir/.${staged##*/}.$$
+    local staged_digest destination_digest validation_error
+
+    [[ ${staged%/*} == "$staging_dir" ]] ||
+        die "candidate is outside the acquisition directory: $staged"
+    if ! validation_error=$(
+        {
+            # Accessed through inspect_image's nameref API.
+            # shellcheck disable=SC2034
+            declare -A staged_release=()
+            inspect_image "$staged" staged_release
+            check_image_identity "$staged" staged_release
+            check_host_compatibility staged_release
+        } 2>&1
+    ); then
+        rm -f -- "$staged"
+        sync -d "$staging_dir"
+        die "discarded invalid staged image: $validation_error"
+    fi
+
+    if [[ -e $destination || -L $destination ]]; then
+        validate_image_file "$destination"
+        staged_digest=$(sha256sum "$staged")
+        staged_digest=${staged_digest%% *}
+        destination_digest=$(sha256sum "$destination")
+        destination_digest=${destination_digest%% *}
+        [[ $staged_digest == "$destination_digest" ]] ||
+            die "staged image collides with a different managed image: ${staged##*/}"
+        printf '%s' "$destination"
+        return
+    fi
+
+    cp --reflink=auto --sparse=always -- "$staged" "$temporary" || {
+        rm -f -- "$temporary"
+        die "failed to copy staged image into the protected store: ${staged##*/}"
+    }
+    chown root:root "$temporary" || {
+        rm -f -- "$temporary"
+        die "failed to set staged-image ownership: ${staged##*/}"
+    }
+    chmod 0444 "$temporary" || {
+        rm -f -- "$temporary"
+        die "failed to set staged-image mode: ${staged##*/}"
+    }
+    mv -T -- "$temporary" "$destination" || {
+        rm -f -- "$temporary"
+        die "failed to publish staged image: ${staged##*/}"
+    }
+    if ! /usr/sbin/restorecon -F "$destination"; then
+        rm -f -- "$destination"
+        sync -d "$images_dir"
+        die "failed to label staged image: ${staged##*/}"
+    fi
+    sync -d "$destination"
+    sync -d "$images_dir"
+    printf '%s' "$destination"
 }
 
 restore_previous_link() {
@@ -379,8 +459,8 @@ activate_image() {
 }
 
 update_image() {
-    local current blocked candidate='' current_version image_version
-    local images=()
+    local current blocked candidate='' managed_candidate current_version image_version
+    local staged_images=()
     local image
 
     systemd-sysupdate --component=stalwart update
@@ -389,17 +469,20 @@ update_image() {
     resolve_optional_link blocked.raw blocked
 
     shopt -s nullglob
-    images=("$images_dir"/"$image_prefix"*"$image_suffix")
-    ((${#images[@]} > 0)) || die 'sysupdate installed no Stalwart images'
+    staged_images=("$staging_dir"/"$image_prefix"*"$image_suffix")
+    # A successful no-op is normal while no release newer than the embedded
+    # seed has been published. Keep the daily timer quiet in that state.
+    ((${#staged_images[@]} > 0)) || return
     while IFS= read -r image; do
         image_version=$(version_from_path "$image")
         if systemd-analyze compare-versions "$image_version" gt "$current_version"; then
             candidate=$image
         fi
-    done < <(printf '%s\n' "${images[@]}" | sort -V)
+    done < <(printf '%s\n' "${staged_images[@]}" | sort -V)
     [[ -n $candidate ]] || return
-    [[ -n $blocked && $candidate == "$blocked" ]] && return
-    activate_image "$candidate" yes
+    [[ -n $blocked && ${candidate##*/} == "${blocked##*/}" ]] && return
+    managed_candidate=$(import_staged_image "$candidate")
+    activate_image "$managed_candidate" yes
 }
 
 manual_activate() {
@@ -411,7 +494,7 @@ manual_activate() {
 }
 
 rollback_image() {
-    local current previous
+    local current previous old_blocked=''
     declare -A current_release=()
     declare -A previous_release=()
 
@@ -431,8 +514,10 @@ rollback_image() {
         "${previous_release[IMAGE_VERSION]}" ||
         die 'the selected image does not authorize rollback to the retained image'
 
+    resolve_optional_link blocked.raw old_blocked
     atomic_link current.raw "$(relative_target "$previous")"
     atomic_link previous.raw "$(relative_target "$current")"
+    atomic_link blocked.raw "$(relative_target "$current")"
     if systemctl restart stalwart.service &&
             systemctl restart particleos-mailserver-health.service; then
         cleanup_images
@@ -443,6 +528,11 @@ rollback_image() {
 
     atomic_link current.raw "$(relative_target "$current")"
     atomic_link previous.raw "$(relative_target "$previous")"
+    if [[ -n $old_blocked ]]; then
+        atomic_link blocked.raw "$(relative_target "$old_blocked")"
+    else
+        remove_link blocked.raw
+    fi
     systemctl restart stalwart.service || true
     die 'retained service image failed health; restored the original selection'
 }

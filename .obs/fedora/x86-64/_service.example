@@ -7,4 +7,17 @@
     <param name="extract">.obs/fedora/x86-64/mkosi.conf</param>
     <param name="without-version">1</param>
   </service>
+  <!-- The seed is an immutable recovery baseline; application updates publish
+       independently through the stalwart_images repository. -->
+  <service name="download_url">
+    <param name="protocol">https</param>
+    <param name="host">download.opensuse.org</param>
+    <param name="path">/repositories/home:/thefutureisprivate/stalwart_seed_images/ParticleOS-Stalwart_0.16.17.14_x86-64.raw.zst</param>
+    <param name="filename">ParticleOS-Stalwart_0.16.17.14_x86-64.raw.zst</param>
+  </service>
+  <service name="verify_file">
+    <param name="file">_service:download_url:ParticleOS-Stalwart_0.16.17.14_x86-64.raw.zst</param>
+    <param name="verifier">sha256</param>
+    <param name="checksum">376379bfcac8d641279c9653cb1ba46419c67af37e174bd43402f3a066ed0184</param>
+  </service>
 </services>

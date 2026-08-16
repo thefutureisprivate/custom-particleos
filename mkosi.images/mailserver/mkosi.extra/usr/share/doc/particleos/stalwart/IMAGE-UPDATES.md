@@ -14,9 +14,12 @@ selection. `previous.raw` retains the last healthy application version.
 
 `particleos-stalwart-update.timer` acquires whole images from the separate
 `stalwart_images` OBS repository with systemd-sysupdate's signed SHA256SUMS
-verification. Acquisition does not select an image. The image manager then
+verification into a distinct staging directory. Downloader retention can
+therefore never unlink `current.raw`, `previous.raw`, or their protected image
+files. Acquisition does not select an image. The image manager then
 mounts it through a transient `RootImage=` unit so PID 1 verifies its embedded
-signature and dm-verity tree before the release metadata can be read.
+signature and dm-verity tree before the release metadata can be read, and only
+then copies the candidate into the protected image store for selection.
 
 Automatic activation is allowed only when every condition below is explicit
 in the signed metadata:
@@ -36,7 +39,9 @@ Activation changes `previous.raw` and `current.raw` with atomic renames,
 restarts Stalwart, and runs the bounded protocol/datastore/WebUI health probe.
 Failure restores the prior links and service. A rejected or unhealthy image is
 retained as `blocked.raw` until a newer release is acquired, without changing
-the selected runtime.
+the selected runtime. An explicit rollback also blocks the image being left so
+the daily timer cannot immediately undo the operator's decision; manually
+activating that version again clears the block after it passes health checks.
 
 Operators can inspect and control the independent application lifecycle with:
 

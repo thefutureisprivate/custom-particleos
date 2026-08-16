@@ -18,7 +18,12 @@ current build target and will require its own package set, policy, and tests.
 
 The PostgreSQL-only Stalwart RPM recipe is maintained in the dedicated
 [custom-stalwart](https://github.com/thefutureisprivate/custom-stalwart)
-repository. The mail role initializes a checksummed, Unix-socket-only local
+repository. The independently built base-hardening packages are maintained in
+[custom-hardened_malloc](https://github.com/thefutureisprivate/custom-hardened_malloc),
+[custom-no_rlimit_as](https://github.com/thefutureisprivate/custom-no_rlimit_as),
+and [custom-ipe-policy](https://github.com/thefutureisprivate/custom-ipe-policy).
+This image repository owns their consumption and trust policy, not their OBS
+package recipes. The mail role initializes a checksummed, Unix-socket-only local
 PostgreSQL cluster and provisions an unprivileged `stalwart` database role by
 peer identity, so no database password exists. Stalwart starts automatically;
 its bootstrap/recovery listener on TCP 8080 is never public. The DNS-service
@@ -112,23 +117,50 @@ particleOS OBS mechanism documented in the
 and its
 [SCM build-recipe extraction guide](https://openbuildservice.org/help/manuals/obs-user-guide/cha-obs-concepts).
 
-1. Create the single `custom-particleos` image package in the
+1. Create the `stalwart-image`, `stalwart-image-updates`, and
+   `custom-particleos` packages in the
    [`home:thefutureisprivate`](https://build.opensuse.org/repositories/home:thefutureisprivate)
-   OBS project.
+   OBS project. Apply
+   [`.obs/stalwart-image-meta.example.xml`](./.obs/stalwart-image-meta.example.xml)
+   to the seed package so it builds only in the retained
+   `stalwart_seed_images` repository. Apply
+   [`.obs/stalwart-image-updates-meta.example.xml`](./.obs/stalwart-image-updates-meta.example.xml)
+   to the update package so moving application releases build only in
+   `stalwart_images`.
 
 2. Apply [`.obs/project-config.example`](./.obs/project-config.example) as the
-   OBS project configuration. It selects the mkosi build type and signed raw
+   OBS project configuration and
+   [`.obs/project-meta.example.xml`](./.obs/project-meta.example.xml) as the
+   project metadata before starting either image build. They define the
+   repositories, select the mkosi build type, and select the signed raw
    checksum repository format for both OS and Stalwart application images.
 
-3. Copy the generic [`_service`
-   template](./.obs/fedora/x86-64/_service.example) into that OBS
-   package as `_service`. Replace `REPLACE_WITH_REVIEWED_COMMIT` with the full
-   immutable reviewed commit ID. The `obs_scm` service exports the dependency
-   closure as OBS's package recipe while mkosi 26 executes the canonical graph
-   from the exported SCM tree.
+3. Copy the [Stalwart-image `_service`
+   template](./.obs/stalwart-image/x86-64/_service.example) into the
+   `stalwart-image` seed package, replace `REPLACE_WITH_REVIEWED_COMMIT` with
+   the full reviewed commit ID, and wait for the signed DDI to publish. The
+   seed repository uses OBS `rebuild="local"`: dependency changes cannot
+   silently rebuild an existing recovery filename, while reviewed source
+   changes still build normally.
+   Independently verify its project signature, embedded dm-verity signature,
+   release metadata, and compressed and raw SHA-256 digests.
 
-4. Apply [`.obs/project-meta.example.xml`](./.obs/project-meta.example.xml) as
-   the project metadata. Both Fedora repositories must inherit from
+4. Record those exact digests in
+   [`mkosi.resources/stalwart-seed/release`](./mkosi.resources/stalwart-seed/release).
+   The generic image package's source service downloads only that seed release
+   and verifies its pinned compressed digest before mkosi runs. The mail image
+   verifies the decompressed digest again before embedding the signed DDI in
+   immutable `/usr`; the first boot copies it to the encrypted persistent root.
+   Keep this package and repository unchanged after the seed is published.
+
+5. Copy the generic [`_service`
+   template](./.obs/fedora/x86-64/_service.example) into the
+   `custom-particleos` package as `_service`. Replace
+   `REPLACE_WITH_REVIEWED_COMMIT` with the full immutable reviewed commit ID.
+   The `obs_scm` service exports the dependency closure as OBS's package recipe
+   while mkosi 26 executes the canonical graph from the exported SCM tree.
+
+6. Keep both Fedora repositories inheriting from
    `Fedora:44/update`, not the frozen `Fedora:44/standard` release repository.
    Keep the `system:systemd` Fedora 44 repository ahead of Fedora updates for
    the current upstream systemd packages selected by
@@ -146,22 +178,26 @@ and its
    rebuilds while preventing unrelated systemd CI metadata churn from
    continuously rebuilding the mail server or blocking image publication.
 
-5. Link the official `system:systemd/ipe-policy` package into the project and
-   enable its Fedora 44 build. OBS then signs that policy with the same project
-   certificate used by ParticleOS:
-
-   ```sh
-   osc linkpac system:systemd ipe-policy home:thefutureisprivate ipe-policy
-   osc meta pkg home:thefutureisprivate ipe-policy \
-       -F .obs/ipe-policy-meta.example.xml
-   ```
+7. Synchronize the reviewed package files and `package-meta.xml` definitions
+   from the dedicated
+   [hardened_malloc](https://github.com/thefutureisprivate/custom-hardened_malloc),
+   [no_rlimit_as](https://github.com/thefutureisprivate/custom-no_rlimit_as),
+   and [IPE policy](https://github.com/thefutureisprivate/custom-ipe-policy)
+   repositories into their matching OBS packages. The IPE repository keeps an
+   immutable link to the reviewed official `system:systemd/ipe-policy`
+   revision; OBS then signs that policy with the same project certificate used
+   by ParticleOS.
 
    The image repository deliberately excludes the systemd-project build of
-   this package and gives the ParticleOS repository priority. Do not enable IPE
+   IPE and gives the ParticleOS base repository priority. Do not enable IPE
    with a policy signed by a certificate absent from the exclusive UEFI
-   database.
+   database, and do not replace the pinned IPE link with a floating link.
 
-6. Run and commit the source service in the generic image package checkout:
+8. Point `stalwart-image-updates` at each separately reviewed application-image
+   commit. Only this package publishes into the moving `stalwart_images`
+   repository consumed by the on-host updater.
+
+9. Run and commit the source service in the generic image package checkout:
 
    ```sh
    osc service run
@@ -431,6 +467,10 @@ The selected image and retained previous image live on the encrypted persistent
 root, so an OS A/B rollback continues with the same selected Stalwart release.
 See `IMAGE-UPDATES.md` in the mailserver image for the signed host/database ABI
 contract and explicit patch-only automatic activation rules.
+Publishing a new compatible patch advances only the `stalwart-image` source
+revision and signed application repository; it does not rebuild ParticleOS.
+The OS seed remains a recovery baseline. Minor/major or migration-bearing
+images must first gain a reviewed database-aware transition and rollback path.
 
 OS updates are fully unattended. `systemd-sysupdate-update.timer` periodically
 stages a complete signed version. PID 1 publishes only that service's dynamic

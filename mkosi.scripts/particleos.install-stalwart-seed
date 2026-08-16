@@ -1,0 +1,61 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+[[ ${IMAGE_ID:?} == ParticleOS-Mailserver ]]
+
+config_root=$(realpath -- "$(dirname -- "${BASH_SOURCE[0]}")/..")
+readonly config_root
+readonly metadata_file=$config_root/mkosi.resources/stalwart-seed/release
+readonly sources_dir=/usr/src/packages/SOURCES
+readonly destination_dir=$BUILDROOT/usr/lib/particleos/stalwart/seed
+
+declare -A seed=()
+
+die() {
+    printf 'particleos-stalwart-seed: %s\n' "$*" >&2
+    exit 1
+}
+
+while IFS= read -r line || [[ -n $line ]]; do
+    [[ -n $line && $line != *[[:space:]]* && $line == *=* ]] ||
+        die 'seed metadata contains an empty, whitespace-bearing, or malformed line'
+    key=${line%%=*}
+    value=${line#*=}
+    [[ $key =~ ^[A-Z][A-Z0-9_]*$ && -n $value ]] ||
+        die 'seed metadata contains an invalid assignment'
+    [[ ! -v seed[$key] ]] || die "seed metadata repeats $key"
+    seed["$key"]=$value
+done <"$metadata_file"
+
+for key in \
+        SEED_METADATA_VERSION IMAGE_VERSION COMPRESSED_FILE \
+        COMPRESSED_SHA256 RAW_FILE RAW_SHA256; do
+    [[ -v seed[$key] ]] || die "seed metadata is missing $key"
+done
+((${#seed[@]} == 6)) || die 'seed metadata contains an unknown field'
+[[ ${seed[SEED_METADATA_VERSION]} == 1 ]] || die 'unsupported seed metadata version'
+[[ ${seed[IMAGE_VERSION]} =~ ^[0-9]+(\.[0-9]+)+$ ]] || die 'invalid seed image version'
+expected_prefix=ParticleOS-Stalwart_${seed[IMAGE_VERSION]}_x86-64.raw
+[[ ${seed[RAW_FILE]} == "$expected_prefix" ]] || die 'raw seed filename does not match its version'
+[[ ${seed[COMPRESSED_FILE]} == "$expected_prefix.zst" ]] ||
+    die 'compressed seed filename does not match its version'
+[[ ${seed[COMPRESSED_SHA256]} =~ ^[0-9a-f]{64}$ ]] || die 'invalid compressed seed digest'
+[[ ${seed[RAW_SHA256]} =~ ^[0-9a-f]{64}$ ]] || die 'invalid raw seed digest'
+
+compressed=$sources_dir/${seed[COMPRESSED_FILE]}
+[[ -f $compressed && ! -L $compressed ]] || die "missing OBS-pinned seed artifact: $compressed"
+printf '%s  %s\n' "${seed[COMPRESSED_SHA256]}" "$compressed" |
+    sha256sum --check --strict
+
+install -d -o root -g root -m 0755 "$destination_dir"
+temporary=$destination_dir/.${seed[RAW_FILE]}.$$
+trap 'rm -f -- "$temporary"' EXIT
+zstd --decompress --force --sparse -o "$temporary" "$compressed"
+printf '%s  %s\n' "${seed[RAW_SHA256]}" "$temporary" |
+    sha256sum --check --strict
+chown root:root "$temporary"
+chmod 0444 "$temporary"
+mv -T -- "$temporary" "$destination_dir/${seed[RAW_FILE]}"
+trap - EXIT

@@ -11,3 +11,10 @@ Repotype: checksumsfile:rawsig staticlinks
 Patterntype: none
 FileProvides: /usr/sbin/useradd shadow-utils
 %endif
+
+%if "%_repository" == "stalwart_seed_images"
+Type: mkosi
+Repotype: checksumsfile:rawsig staticlinks
+Patterntype: none
+FileProvides: /usr/sbin/useradd shadow-utils
+%endif

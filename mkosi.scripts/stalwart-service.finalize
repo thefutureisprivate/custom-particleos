@@ -2,6 +2,21 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 set -euo pipefail
 
+# Fail closed if the sealed image carries the generic-release placeholder or
+# any non-HTTPS metadata inherited from the build substrate.
+grep -Fqx 'NAME="ParticleOS Stalwart Service Image"' "$BUILDROOT/usr/lib/os-release"
+grep -Fqx 'ID=particleos-stalwart' "$BUILDROOT/usr/lib/os-release"
+grep -Fqx 'ID_LIKE="particleos fedora"' "$BUILDROOT/usr/lib/os-release"
+grep -Fqx "VERSION=\"$IMAGE_VERSION\"" "$BUILDROOT/usr/lib/os-release"
+grep -Fqx "VERSION_ID=\"$IMAGE_VERSION\"" "$BUILDROOT/usr/lib/os-release"
+grep -Fqx 'IMAGE_ID="ParticleOS-Stalwart"' "$BUILDROOT/usr/lib/os-release"
+grep -Fqx "IMAGE_VERSION=\"$IMAGE_VERSION\"" "$BUILDROOT/usr/lib/os-release"
+if grep -Eiq 'generic|http://|zombo|nsa\.gov|youtu\.be' \
+        "$BUILDROOT/usr/lib/os-release"; then
+    echo 'unsafe generic service-image release metadata remains' >&2
+    exit 1
+fi
+
 # The relabel pass immediately precedes this hook. Fail the build if the DDI
 # would not transition into the dedicated host policy domain.
 test "$(stat --format=%C "$BUILDROOT/usr/bin/stalwart")" = \

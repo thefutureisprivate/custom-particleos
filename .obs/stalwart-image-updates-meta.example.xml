@@ -1,0 +1,8 @@
+<package name="stalwart-image-updates" project="home:thefutureisprivate">
+  <title>ParticleOS Stalwart service-image updates</title>
+  <description>Signed dm-verity Stalwart RootImage releases for independent application updates.</description>
+  <build>
+    <disable/>
+    <enable repository="stalwart_images"/>
+  </build>
+</package>

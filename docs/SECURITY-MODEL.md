@@ -1,11 +1,12 @@
 # Security model
 
 This document describes the shared security properties of the ParticleOS
-server images and the webserver and mailserver roles. It is a deployment model, not
-a claim that these Fedora-derived images are GrapheneOS or provide Android's
-security architecture. The mailserver contains the project-provided,
-PostgreSQL-only Stalwart RPM plus a local Unix-socket-only PostgreSQL server;
-both are enabled with peer authentication and no database secret. The public
+server images and the webserver and mailserver roles. It is a deployment model,
+not a claim that these Fedora-derived images are GrapheneOS or provide Android's
+security architecture. The mailserver runs the project-provided,
+PostgreSQL-only Stalwart RPM from a separately signed, dm-verity-protected
+systemd service image, while PostgreSQL remains host-native and local to its
+Unix socket. They use peer authentication with no database secret. The public
 DNS-server role is an empty configuration placeholder and is not a current OBS
 image-build target.
 
@@ -40,6 +41,9 @@ what the image alone can guarantee.
    Boot uses the enrolled OBS project certificate.
 5. systemd-sysupdate writes complete A/B usr, verity, signature, and UKI
    artifacts; boot counting retains a fallback instance.
+6. PID 1 verifies the selected Stalwart DDI's embedded root-hash signature and
+   dm-verity tree before executing it. Its root-owned selection lives on the
+   encrypted persistent root and is independent of the OS A/B slot.
 
 The shared base removes every package-created loose boot artifact before it is
 copied into a role. Only the role build may populate the ESP, and it does so
@@ -77,11 +81,11 @@ Secure Boot authority, but it does not by itself prevent rollback to an older
 UKI signed by the same project key. OBS source pinning, signed dm-verity, update
 policy, and release operations remain responsible for rollback control.
 
-The official systemd IPE policy source is rebuilt in the ParticleOS OBS
-project, where OBS signs it with this same certificate. The systemd-project
-build is excluded from package resolution. This lets the kernel authenticate
-and enforce IPE without enrolling the broader systemd project certificate in
-UEFI.
+The dedicated `custom-ipe-policy` repository pins a reviewed revision of the
+official systemd IPE policy source. It is rebuilt in the ParticleOS OBS project,
+where OBS signs it with this same certificate. The systemd-project build is
+excluded from package resolution. This lets the kernel authenticate and
+enforce IPE without enrolling the broader systemd project certificate in UEFI.
 
 This image targets VPS guests only. It does not install CPU microcode payloads,
 because the physical host's microcode is controlled by the VPS provider. The
@@ -95,7 +99,7 @@ therefore explicit lower-layer trust dependencies.
 | Image layout | Project-key-only Secure Boot, signed UKI, A/B usr, dm-verity, PCR 7-bound TPM2 root and swap, `nosuid,nodev` writable root | systemd/particleos |
 | Kernel command line | audit, SELinux enforcing, IPE, lockdown, signed modules, allocation/free initialization, stack/allocator randomization, no initrd shell, vsyscall, or IA-32 emulation | particleOS plus GrapheneOS and secureblue policy |
 | Kernel runtime | SELinux plus irreversible Yama ptrace denial, targeted user-namespace denial, irreversible unprivileged BPF and io_uring denial, restricted perf, kexec, kernel logs, core dumps, and module loading | GrapheneOS infrastructure and secureblue |
-| Memory allocator | signed secureblue `hardened_malloc` package globally preloaded with `no_rlimit_as` for managed services | secureblue |
+| Memory allocator | signed, independently maintained `custom-hardened_malloc` package globally preloaded with the `custom-no_rlimit_as` companion for managed services | GrapheneOS and secureblue |
 | Network | default-deny nftables input/forward/output, role-specific pre-conntrack filtering, source-keyed web admission, dual-stack FIB RPF, strong host model, identity/protocol/rate-limited service egress | GrapheneOS infrastructure |
 | DNS | systemd-resolved, authenticated Cloudflare DoT only, local DNSSEC validation, no DHCP/RA DNS or plaintext fallback | systemd and secureblue guidance |
 | SELinux sockets | userspace denial for AF_ALG, IPsec control, packet-radio, and unused legacy socket classes | secureblue |
@@ -103,7 +107,7 @@ therefore explicit lower-layer trust dependencies.
 | SSH | Ed25519 keys only, ML-KEM hybrid key exchange, no passwords/root/forwarding, source allowlist and rate limit | GrapheneOS infrastructure |
 | nginx (webserver) | sandboxed service, bounded journal logging, HTTP/3, request/admission bounds, modern TLS, strict headers, no tokens or autoindex | GrapheneOS infrastructure and grapheneos.org |
 | Certificates (webserver) | non-root Certbot webroot HTTP-01, required short-lived ACME profile, private state, fixed validation/reload boundary | GrapheneOS infrastructure plus Certbot |
-| Stalwart (mailserver) | PostgreSQL-only feature set, OBS-packaged WebUI, dedicated SELinux domain and account, restrictive systemd sandbox, bounded ingress and egress | Stalwart upstream plus GrapheneOS infrastructure principles |
+| Stalwart (mailserver) | PostgreSQL-only feature set in a signed EROFS service DDI, embedded dm-verity, persistent atomic selection and rollback, OBS-packaged WebUI, dedicated SELinux domain and account, restrictive systemd sandbox, bounded ingress and egress | Stalwart upstream plus systemd and GrapheneOS infrastructure principles |
 | PostgreSQL (mailserver) | Local Unix socket only, checksummed cluster, peer identity, no database secret, least-privileged role, restrictive systemd sandbox | Fedora PostgreSQL plus ParticleOS policy |
 | Services | capability bounds, namespaces, read-only filesystem, syscall/address-family restrictions, OOM policy | GrapheneOS infrastructure |
 | Privilege elevation | systemd run0, isolated transient service, polkit authentication, no setuid sudo/mount/umount | systemd |
@@ -386,7 +390,10 @@ The webserver role additionally permits:
 
 The mailserver role additionally permits Stalwart's package-managed mutable
 configuration in `/etc/stalwart`, state in `/var/lib/stalwart`, and bounded
-journal/file logging state in `/var/log/stalwart`. PostgreSQL state is confined
+journal/file logging state in `/var/log/stalwart`. Root alone manages signed
+application DDIs and atomic current/previous/blocked links below
+`/var/lib/particleos/stalwart`; the directory is on the encrypted persistent
+root and is not replaced by an OS A/B rollback. PostgreSQL state is confined
 to `/var/lib/pgsql`; the mode-0770 `stalwart`-group socket is the only listener
 under `/run/postgresql`, where peer authentication maps the non-login
 `stalwart` OS account to the same least-privileged database role. No database
@@ -463,12 +470,17 @@ bundles PostgreSQL because it is an enforced local dependency, but disables its
 network listeners and uses Unix peer authentication with no database secret.
 
 The Stalwart WebUI is a checksum-pinned release asset inside the signed RPM and
-dm-verity-protected `/usr` payload. The patched server accepts only its exact
+the signed, dm-verity-protected application DDI. The patched server accepts only
+its exact
 `file:///usr/share/stalwart/webui.zip` URL, so registry updates cannot recreate
 the upstream first-boot HTTPS downloader. It reads that RPM file on every
 process start rather than serving an Application-ID-keyed mutable blob cache,
-making WebUI and OS activation atomic. Database migration errors are returned
-as process failures so systemd restart and failed-unit handling remain active.
+making the executable and WebUI atomic with the selected application image.
+OS A/B changes do not alter that selection. Signed release metadata permits
+automatic activation only for an explicitly rollback-compatible patch with an
+unchanged database format/schema and no migration; all other releases require
+a reviewed database-aware path. Database migration errors are returned as
+process failures so systemd restart and failed-unit handling remain active.
 POP3 and ManageSieve listeners are
 absent from the initial registry and their ports are absent from nftables. The
 mail boot-health gate also rejects unexpected POP3, plaintext IMAP/submission,
@@ -500,12 +512,17 @@ A role release is not complete until the exact OBS artifact has been:
    SELinux socket denials.
 
 For a mailserver release, verification additionally checks the exact Stalwart
-package version and signature, packaged WebUI digest, active dedicated SELinux
+package version and signature, service-image project signature, embedded
+dm-verity signature, signed host/database compatibility metadata, packaged
+WebUI digest, active dedicated SELinux
 domain, PostgreSQL Unix-only and peer-authenticated state, absence of database
 secrets, active mail boot-health gate, systemd sandboxes, closed POP3,
 ManageSieve, bootstrap, plaintext, and PostgreSQL ports, and the four permitted
 public TCP ports. The exact generic image must bootstrap Stalwart against its
-own local database without deployment credentials.
+own local database without deployment credentials. Verification also exercises
+independent compatible-patch activation, health-triggered application rollback,
+explicit sticky rollback, and an OS A/B rollback which preserves the current
+application-image selection.
 
 Static repository validation cannot prove the behavior of a Fedora kernel,
 firmware, OBS worker, generated UKI, TPM implementation, or target hardware.

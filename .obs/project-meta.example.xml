@@ -34,6 +34,17 @@
     <path project="Fedora:44" repository="update"/>
     <arch>x86_64</arch>
   </repository>
+  <!-- This repository is an immutable recovery-release lane. Dependency
+       changes must not rebuild a reviewed seed under the same filename. -->
+  <repository name="stalwart_seed_images" rebuild="local">
+    <path project="openSUSE:Tools" repository="Fedora_44"/>
+    <path project="home:thefutureisprivate" repository="stalwart_Fedora_44"/>
+    <path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>
+    <path project="home:thefutureisprivate" repository="Fedora_44"/>
+    <path project="system:systemd" repository="Fedora_44"/>
+    <path project="Fedora:44" repository="update"/>
+    <arch>x86_64</arch>
+  </repository>
   <repository name="Fedora_44">
     <path project="openSUSE:Tools" repository="Fedora_44"/>
     <path project="system:systemd" repository="Fedora_44"/>

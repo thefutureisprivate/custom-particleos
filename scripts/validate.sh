@@ -55,6 +55,8 @@ base_config=mkosi.images/base/mkosi.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
 stalwart_service_config=mkosi.images/stalwart-service/mkosi.conf
 stalwart_service_release=mkosi.images/stalwart-service/mkosi.extra/usr/lib/particleos/stalwart/release
+stalwart_seed_release=mkosi.resources/stalwart-seed/release
+stalwart_seed_installer=mkosi.scripts/particleos.install-stalwart-seed
 role_policy=mkosi.role.conf
 obs_config=mkosi.obs.conf
 role_obs_config=mkosi.role.obs.conf
@@ -224,6 +226,7 @@ require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$service_template"
 require_fixed ".obs/fedora/x86-64/mkosi.conf" "$service_template"
 xmllint --noout "$stalwart_service_template"
 xmllint --noout .obs/stalwart-image-meta.example.xml
+xmllint --noout .obs/stalwart-image-updates-meta.example.xml
 require_fixed "# needssslcertforbuild" "$stalwart_obs_recipe"
 require_fixed "Dependencies=stalwart-service" "$stalwart_obs_recipe"
 require_fixed "stalwart-particleos-user" "$stalwart_obs_recipe"
@@ -234,13 +237,26 @@ require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$stalwart_service_template"
 require_fixed ".obs/stalwart-image/x86-64/mkosi.conf" "$stalwart_service_template"
 require_fixed ".obs/stalwart-image/x86-64/stalwart-image.build" \
     "$stalwart_service_template"
-require_fixed '<enable repository="stalwart_images"/>' \
+require_fixed '<enable repository="stalwart_seed_images"/>' \
     .obs/stalwart-image-meta.example.xml
+require_fixed '<enable repository="stalwart_images"/>' \
+    .obs/stalwart-image-updates-meta.example.xml
+require_fixed 'name="stalwart_seed_images" rebuild="local"' \
+    .obs/project-meta.example.xml
+require_fixed '<service name="download_url">' "$service_template"
+require_fixed '<service name="verify_file">' "$service_template"
+require_fixed 'protocol">https</param>' "$service_template"
+require_fixed 'host">download.opensuse.org</param>' "$service_template"
+require_fixed 'stalwart_seed_images/ParticleOS-Stalwart_' "$service_template"
+require_fixed 'verifier">sha256</param>' "$service_template"
+if grep -Fq 'REPLACE_WITH_OBS_COMPRESSED_SHA256' "$service_template"; then
+    fail "$service_template contains an unpinned seed digest"
+fi
 require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
 
 require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
-require_fixed "ImageVersion=0.16.17.13" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.14" "$stalwart_service_config"
 require_fixed "Format=disk" "$stalwart_service_config"
 require_fixed "Bootable=no" "$stalwart_service_config"
 require_fixed "SELinuxRelabel=yes" "$stalwart_service_config"
@@ -288,6 +304,37 @@ for metadata_key in \
 done
 require_fixed "UPDATE_KIND=seed" "$stalwart_service_release"
 require_fixed "AUTOMATIC_UPDATE=no" "$stalwart_service_release"
+require_fixed 'NAME="ParticleOS Stalwart Service Image"' \
+    mkosi.scripts/stalwart-service.postinst.chroot
+require_fixed 'ID=particleos-stalwart' mkosi.scripts/stalwart-service.postinst.chroot
+require_fixed 'HOME_URL="https://github.com/thefutureisprivate/custom-particleos/"' \
+    mkosi.scripts/stalwart-service.postinst.chroot
+require_fixed "unsafe generic service-image release metadata remains" \
+    mkosi.scripts/stalwart-service.finalize
+require_fixed 'IMAGE_ID="ParticleOS-Stalwart"' mkosi.scripts/stalwart-service.finalize
+require_fixed 'IMAGE_VERSION=\"$IMAGE_VERSION\"' mkosi.scripts/stalwart-service.finalize
+require_fixed '! -name cat ! -name cp ! -name stalwart -delete' \
+    mkosi.scripts/stalwart-service.finalize
+for removed_service_tree in \
+        /etc/selinux /usr/lib/systemd /usr/lib/sysusers.d /usr/lib/tmpfiles.d \
+        /usr/libexec /usr/sbin /usr/share/selinux /var/lib/selinux; do
+    require_fixed "\$BUILDROOT$removed_service_tree" mkosi.scripts/stalwart-service.finalize
+done
+for seed_key in \
+        SEED_METADATA_VERSION IMAGE_VERSION COMPRESSED_FILE \
+        COMPRESSED_SHA256 RAW_FILE RAW_SHA256; do
+    require_fixed "$seed_key=" "$stalwart_seed_release"
+done
+require_fixed "PostInstallationScripts=%D/mkosi.scripts/particleos.install-stalwart-seed" \
+    mkosi.images/mailserver/mkosi.conf
+test -x "$stalwart_seed_installer" || fail "$stalwart_seed_installer must be executable"
+require_fixed "readonly sources_dir=/usr/src/packages/SOURCES" "$stalwart_seed_installer"
+require_fixed "sha256sum --check --strict" "$stalwart_seed_installer"
+require_fixed 'zstd --decompress --force --sparse -o "$temporary"' "$stalwart_seed_installer"
+require_fixed 'chmod 0444 "$temporary"' "$stalwart_seed_installer"
+if grep -Fq 'REPLACE_WITH_' "$stalwart_seed_release"; then
+    fail "$stalwart_seed_release contains an unpinned digest"
+fi
 
 if ! diff -u \
         <({
@@ -297,6 +344,7 @@ if ! diff -u \
             extract_stanza VolatilePackages "$initrd_config"
             extract_stanza Packages mkosi.images/webserver/mkosi.conf
             extract_stanza Packages mkosi.images/mailserver/mkosi.conf
+            extract_stanza BuildPackages mkosi.images/mailserver/mkosi.conf
         } | sed '/^$/d' | sort -u) \
         <(extract_stanza BuildPackages "$obs_recipe" | sort -u); then
     fail "$obs_recipe BuildPackages= does not equal the selected graph package closure"
@@ -421,20 +469,17 @@ checksum_hook=mkosi.scripts/remove-first-pass-checksum
 test -x "$checksum_hook" || fail "$checksum_hook must be executable"
 require_fixed "Refusing unsafe checksum path" "$checksum_hook"
 require_fixed "rm -f --" "$checksum_hook"
-xmllint --noout .obs/ipe-policy-meta.example.xml
 xmllint --noout .obs/project-meta.example.xml
-xmllint --noout .obs/hardened_malloc-meta.example.xml
-xmllint --noout .obs/no_rlimit_as-meta.example.xml
 require_fixed "project: home:thefutureisprivate" .obs/workflows.example.yml
 require_fixed '<path project="Fedora:44" repository="update"/>' .obs/project-meta.example.xml
 require_fixed '<path project="system:systemd" repository="Fedora_44"/>' .obs/project-meta.example.xml
 require_fixed '<repository name="particleos_base_Fedora_44">' .obs/project-meta.example.xml
 require_fixed '<repository name="stalwart_images">' .obs/project-meta.example.xml
-for image_repository in fedora_44_images stalwart_images; do
+for image_repository in fedora_44_images stalwart_images stalwart_seed_images; do
     require_fixed "%_repository\" == \"$image_repository" .obs/project-config.example
 done
-if [[ $(grep -c '^Type: mkosi$' .obs/project-config.example) -ne 2 ]]; then
-    fail ".obs/project-config.example must select mkosi for both image repositories"
+if [[ $(grep -c '^Type: mkosi$' .obs/project-config.example) -ne 3 ]]; then
+    fail ".obs/project-config.example must select mkosi for all image repositories"
 fi
 require_fixed "Repotype: checksumsfile:rawsig staticlinks" .obs/project-config.example
 require_fixed '<path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>' \
@@ -490,15 +535,12 @@ if find mkosi.images -path '*/mkosi.conf.d/*' -type f -print | grep -q .; then
     fail "role images cannot configure top-level SandboxTrees repository mounts"
 fi
 require_fixed "excludepkgs=ipe-policy" mkosi.profiles/obs-repos/mkosi.conf.d/fedora/mkosi.conf.d/44.repo
-for base_package_meta in \
+for moved_package_config in \
         .obs/hardened_malloc-meta.example.xml \
         .obs/ipe-policy-meta.example.xml \
         .obs/no_rlimit_as-meta.example.xml; do
-    require_fixed '<enable repository="particleos_base_Fedora_44" arch="x86_64"/>' \
-        "$base_package_meta"
-    if rg -n '<enable repository="Fedora_44"' "$base_package_meta"; then
-        fail "$base_package_meta must not rebuild ParticleOS base packages in the Stalwart repository"
-    fi
+    [[ ! -e $moved_package_config ]] ||
+        fail "$moved_package_config belongs in its dedicated package repository"
 done
 printf '%s  %s\n' \
     5fe4715ba5d0fb9abf18915ea38213c45240fe828a7aa52c574634a13484814c \
@@ -649,6 +691,7 @@ require_fixed "InaccessiblePaths=/sys/fs/cgroup" "$mail_dropin"
 require_fixed "Environment=STALWART_RECOVERY_MODE=1" "$mail_dropin"
 require_fixed "Environment=PARTICLEOS_AUTO_RECOVERY_MODE=1" "$mail_dropin"
 require_fixed "Environment=PARTICLEOS_RUNTIME_MODE_FILE=/run/stalwart/particleos-mode" "$mail_dropin"
+require_fixed "SystemCallFilter=~@privileged @resources" "$mail_dropin"
 require_fixed "PostgreSQL" "$mail_readme"
 require_fixed "localhost:8080" "$mail_readme"
 require_fixed "127.0.0.54:53" "$mail_readme"
@@ -717,6 +760,8 @@ require_fixed "OnCalendar=weekly" "$postgres_basebackup_timer"
 require_fixed "d /var/lib/pgsql/backup 0700 postgres postgres -" "$postgres_tmpfiles"
 require_fixed "postgresql-contrib" mkosi.images/mailserver/mkosi.conf
 require_fixed "postgresql-contrib" "$obs_recipe"
+require_fixed "zstd" "$obs_recipe"
+require_fixed "zstd" mkosi.images/mailserver/mkosi.conf
 require_fixed "never removes backups or WAL" "$postgres_backup_readme"
 require_fixed "data.pre-pitr" "$postgres_backup_readme"
 require_fixed "Requires=postgresql.service" "$stalwart_db_unit"
@@ -735,17 +780,27 @@ require_fixed "HOST_ABI_ROLLBACK=1" "$stalwart_host_abi"
 require_fixed 'RootImagePolicy=$image_policy' "$stalwart_image_manager"
 require_fixed "systemd-run --quiet --wait --pipe --collect" "$stalwart_image_manager"
 require_fixed "systemd-sysupdate --component=stalwart update" "$stalwart_image_manager"
+require_fixed "readonly staging_dir=" "$stalwart_image_manager"
+require_fixed "import_staged_image" "$stalwart_image_manager"
+require_fixed "discarded invalid staged image" "$stalwart_image_manager"
+require_fixed 'inspect_image "$destination" release' "$stalwart_image_manager"
+require_fixed '((${#staged_images[@]} > 0)) || return' "$stalwart_image_manager"
 require_fixed "resolve_optional_link" "$stalwart_image_manager"
 reject_fixed "resolve_link current.raw 2>/dev/null || true" "$stalwart_image_manager"
 require_fixed "minor/major Stalwart updates require a database-aware migration path" \
     "$stalwart_image_manager"
 require_fixed "only explicitly compatible patch images may activate automatically" \
     "$stalwart_image_manager"
+require_fixed "candidate downgrades the Stalwart runtime" "$stalwart_image_manager"
+require_fixed "candidate downgrades the Stalwart package release" "$stalwart_image_manager"
+require_fixed "candidate downgrades the packaged WebUI" "$stalwart_image_manager"
 require_fixed "ROLLBACK_COMPATIBLE_FROM" "$stalwart_image_manager"
 require_fixed "atomic_link previous.raw" "$stalwart_image_manager"
 require_fixed "atomic_link current.raw" "$stalwart_image_manager"
 require_fixed "particleos-mailserver-health.service" "$stalwart_image_manager"
 require_fixed "blocked.raw" "$stalwart_image_manager"
+require_fixed 'atomic_link blocked.raw "$(relative_target "$current")"' \
+    "$stalwart_image_manager"
 require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager initialize" \
     "$stalwart_image_setup_unit"
 require_fixed "RequiresMountsFor=/var/lib/particleos/stalwart" \
@@ -754,19 +809,24 @@ require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager update" \
     "$stalwart_update_unit"
 require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups" \
     "$stalwart_update_unit"
+require_fixed "CapabilityBoundingSet=" "$stalwart_update_unit"
+require_fixed "DevicePolicy=closed" "$stalwart_update_unit"
 require_fixed "NoNewPrivileges=no" "$stalwart_update_unit"
 reject_fixed "NoNewPrivileges=yes" "$stalwart_update_unit"
+require_fixed "RestrictNamespaces=yes" "$stalwart_update_unit"
 require_fixed "OnCalendar=daily" "$stalwart_update_timer"
 require_fixed "Type=url-file" "$stalwart_sysupdate"
 require_fixed "Verify=yes" "$stalwart_sysupdate"
 require_fixed "Path=https://download.opensuse.org/repositories/home:/thefutureisprivate/stalwart_images/" \
     "$stalwart_sysupdate"
 require_fixed "Type=regular-file" "$stalwart_sysupdate"
-require_fixed "Path=/var/lib/particleos/stalwart/images" "$stalwart_sysupdate"
+require_fixed "Path=/var/lib/particleos/stalwart/staging" "$stalwart_sysupdate"
 require_fixed "ReadOnly=yes" "$stalwart_sysupdate"
-require_fixed "InstancesMax=4" "$stalwart_sysupdate"
+require_fixed "InstancesMax=2" "$stalwart_sysupdate"
 reject_fixed "CurrentSymlink=" "$stalwart_sysupdate"
 require_fixed "d /var/lib/particleos/stalwart/images 0700 root root -" \
+    "$stalwart_image_tmpfiles"
+require_fixed "d /var/lib/particleos/stalwart/staging 0700 root root -" \
     "$stalwart_image_tmpfiles"
 require_fixed "OS A/B updates and rollbacks never" "$stalwart_image_readme"
 require_fixed "UPDATE_KIND=patch" "$stalwart_image_readme"

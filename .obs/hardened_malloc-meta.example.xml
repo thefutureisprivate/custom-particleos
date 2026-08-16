@@ -1,8 +1,0 @@
-<package name="hardened_malloc" project="home:thefutureisprivate">
-  <title/>
-  <description/>
-  <build>
-    <disable/>
-    <enable repository="particleos_base_Fedora_44" arch="x86_64"/>
-  </build>
-</package>
