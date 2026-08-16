@@ -74,8 +74,8 @@ Every current role inherits:
 - irreversible kernel-module loading disablement after the early boot modules
   and firewall are loaded;
 - an nftables default-deny policy, pre-conntrack role filtering, strict
-  dual-stack reverse-path filtering, an empty SSH source allowlist, and
-  identity-, protocol-, and rate-limited service egress;
+  dual-stack reverse-path filtering, globally reachable source-rate-limited
+  SSH, and identity-, protocol-, and rate-limited service egress;
 - key-only Ed25519 SSH with root login, passwords, forwarding, tunnels, and
   unused authentication methods disabled;
 - no crash dumps, no suspend/hibernation, no desktop stack, no default password,
@@ -383,40 +383,13 @@ manager socket. The HTTPS example advertises HTTP/3 and enables HSTS without
 `includeSubDomains` or preload; opt into those only after every subdomain is
 permanently HTTPS-only.
 
-## Enable remote SSH deliberately
+## Remote SSH
 
-The SSH socket is enabled, but nftables admits no SSH source address by default.
-Perform initial administration from the console. Edit
-`/etc/particleos/ssh-allowlist.nft` and add only individual management
-addresses or narrow CIDRs:
-
-```nft
-set ssh_ipv4 {
-    type ipv4_addr
-    flags interval
-    elements = { 203.0.113.10 }
-}
-
-set ssh_ipv6 {
-    type ipv6_addr
-    flags interval
-    elements = { 2001:db8:1234::10 }
-}
-```
-
-Then validate and atomically reload the complete policy:
-
-```sh
-run0 nft --check --file /usr/lib/particleos/nftables.conf
-run0 systemctl reload nftables.service
-run0 systemctl daemon-reload
-```
-
-Install the administrator's Ed25519 public key before relying on remote access.
-Keep console or out-of-band access available: a malformed allowlist correctly
-fails the firewall reload rather than opening SSH. The daemon reload repopulates
-the dynamic cgroup set if `systemd-sysupdate-update.service` is active while the
-firewall ruleset is replaced.
+The socket-activated SSH service is reachable on TCP port 22 from every IPv4
+and IPv6 source. Authentication is restricted to the administrator's raw
+Ed25519 public key; passwords, root login, forwarding, tunnels, and unused
+authentication methods remain disabled. nftables retains a per-source limit on
+new SSH connection attempts so one address cannot consume the entire listener.
 
 ## DNS trust and failure mode
 
@@ -513,8 +486,8 @@ ParticleOS OBS repository key, and Fedora/systemd repositories as
 release-critical trust roots.
 
 Configuration under `/usr/lib/particleos` is immutable and changes through a
-new signed image. Per-machine SSH policy and the administrator's encrypted-root
-home are shared mutable surfaces. The webserver role additionally permits
+new signed image. The administrator's encrypted-root home and generated SSH
+host key are shared mutable surfaces. The webserver role additionally permits
 Certbot state, nginx virtual hosts, and web content. The mailserver role permits
 only its labelled Stalwart configuration/state and PostgreSQL data; the dormant
 DNS image adds no package or mutable role policy. Add required virtual hardware

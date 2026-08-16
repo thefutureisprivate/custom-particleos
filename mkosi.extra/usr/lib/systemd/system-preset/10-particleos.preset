@@ -19,7 +19,7 @@ disable chrony-wait.service
 enable nftables.service
 enable particleos-module-lockdown.service
 
-# SSH is socket activated, key-only, and blocked by nftables until allowlisted.
+# SSH is socket activated, key-only, globally reachable, and source-rate-limited.
 disable sshd.service
 enable sshd.socket
 

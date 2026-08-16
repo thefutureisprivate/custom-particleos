@@ -20,7 +20,7 @@ The shared base is designed to preserve:
   payload;
 - confidentiality of writable system state when the machine is powered off;
 - integrity of root-owned web content and nginx policy in the webserver role;
-- restricted remote administration with no password or root SSH;
+- key-only remote administration with no password or root SSH;
 - containment of OpenSSH, chrony, firewall, and web-role nginx/Certbot compromise;
 - a small, reviewable mutable configuration surface.
 
@@ -104,7 +104,7 @@ therefore explicit lower-layer trust dependencies.
 | DNS | systemd-resolved, authenticated Cloudflare DoT only, local DNSSEC validation, no DHCP/RA DNS or plaintext fallback | systemd and secureblue guidance |
 | SELinux sockets | userspace denial for AF_ALG, IPsec control, packet-radio, and unused legacy socket classes | secureblue |
 | Time | multiple authenticated NTS sources with source agreement | GrapheneOS infrastructure |
-| SSH | Ed25519 keys only, ML-KEM hybrid key exchange, no passwords/root/forwarding, source allowlist and rate limit | GrapheneOS infrastructure |
+| SSH | Globally reachable, Ed25519 keys only, ML-KEM hybrid key exchange, no passwords/root/forwarding, source-keyed rate limit | GrapheneOS infrastructure |
 | nginx (webserver) | sandboxed service, bounded journal logging, HTTP/3, request/admission bounds, modern TLS, strict headers, no tokens or autoindex | GrapheneOS infrastructure and grapheneos.org |
 | Certificates (webserver) | non-root Certbot webroot HTTP-01, required short-lived ACME profile, private state, fixed validation/reload boundary | GrapheneOS infrastructure plus Certbot |
 | Stalwart (mailserver) | PostgreSQL-only feature set in a signed EROFS service DDI, embedded dm-verity, persistent atomic selection and rollback, OBS-packaged WebUI, dedicated SELinux domain and account, restrictive systemd sandbox, bounded ingress and egress | Stalwart upstream plus systemd and GrapheneOS infrastructure principles |
@@ -286,8 +286,8 @@ Shared inbound policy permits:
   implicit-TLS submission 465, and implicit-TLS IMAP 993 with the same layered
   admission and concurrency bounds; POP3, ManageSieve, bootstrap HTTP 8080,
   PostgreSQL, and legacy plaintext mail ports remain closed;
-- new TCP connections to port 22 only from the mutable IPv4 or IPv6
-  administrator sets, with a much lower rate limit.
+- new TCP connections to port 22 from any IPv4 or IPv6 source, with a low
+  source-keyed rate limit.
 
 The dormant DNS placeholder adds no public ingress and selects no service
 packages. Forwarding is denied. Strict FIB checks implement
@@ -377,9 +377,9 @@ objects retain secureblue's non-executable mode 4644: their set-user-ID bit is
 loader metadata, not a privilege-transition entry point, and allows glibc to
 preload them in secure-execution mode.
 
-SSH is socket activated but unreachable until an administrator populates
-`/etc/particleos/ssh-allowlist.nft`. SSH accepts only public-key authentication
-and Ed25519 host/user keys. Starting the socket requires Fedora's exact
+SSH is socket activated and reachable from every IPv4 and IPv6 source. It
+accepts only public-key authentication and Ed25519 host/user keys. Starting the
+socket requires Fedora's exact
 Ed25519 key-generation instance to succeed; the static multi-algorithm keygen
 target is masked so per-connection activation cannot create unused RSA or
 ECDSA private keys. The key generator has no capabilities or network access
@@ -394,13 +394,12 @@ files under `/var/log`, and pam_lastlog2's database under `/var/lib/lastlog`;
 the rest of the system remains read-only to the service mount namespace.
 `NoNewPrivileges=yes` is excluded because OpenSSH 10.2 re-execs its session
 helper and SELinux must transition it from `sshd_t` to `sshd_session_t`.
-Initial public-key installation and firewall changes therefore require console
-or trusted out-of-band access.
+Initial public-key installation is completed by the console first-boot service
+before systemd starts the SSH socket.
 
 Shared mutable operator-controlled paths are intentionally limited to:
 
-- `/home/<administrator>` on the encrypted writable root;
-- `/etc/particleos/ssh-allowlist.nft`.
+- `/home/<administrator>` on the encrypted writable root.
 
 The webserver role additionally permits:
 
@@ -531,7 +530,8 @@ A role release is not complete until the exact OBS artifact has been:
 3. installed and booted with Secure Boot, TPM2 encryption, dm-verity, IPE, and
    SELinux enforcement active;
 4. tested for firewall fail-closed behavior, DoT-only resolver egress, local
-   DNSSEC success/failure cases, and empty SSH allowlists;
+   DNSSEC success/failure cases, globally reachable key-only SSH, and
+   source-keyed SSH rate limiting;
 5. checked with `systemd-analyze security` for the exposed services;
 6. tested for nginx configuration, HTTP behavior, update, rollback, first-boot
    provisioning, recovery access, Certbot staging issuance, renewal deploy

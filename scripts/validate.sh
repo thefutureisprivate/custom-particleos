@@ -711,6 +711,9 @@ require_fixed '"$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants/partic
     "$finalize"
 require_fixed "PermitRootLogin no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PasswordAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
+require_fixed "AuthenticationMethods publickey"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
+require_fixed "KbdInteractiveAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
+require_fixed "PubkeyAuthentication yes"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "HostKey /etc/ssh/ssh_host_ed25519_key"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PermitListen none"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PermitOpen none"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
@@ -822,6 +825,16 @@ require_fixed "meter web_tcp4" "$web_firewall"
 require_fixed "add @web_tcp_conn4 { ip saddr ct count over 64 }" "$web_firewall"
 require_fixed "ct count over 2048" "$web_firewall"
 require_fixed "meter ssh4" "$base_firewall"
+require_fixed "meta nfproto ipv4 tcp dport 22 ct state new meter ssh4" "$base_firewall"
+require_fixed "meta nfproto ipv6 tcp dport 22 ct state new meter ssh6" "$base_firewall"
+require_fixed "tcp dport 22 ct state new accept" "$base_firewall"
+reject_fixed "@ssh_ipv4" "$base_firewall"
+reject_fixed "@ssh_ipv6" "$base_firewall"
+reject_fixed "ssh-allowlist.nft" "$base_firewall"
+if [[ -e mkosi.extra/usr/lib/particleos/ssh-allowlist.nft ]]; then
+    fail "the obsolete SSH source allowlist must not be shipped"
+fi
+reject_fixed "ssh-allowlist.nft" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
 require_fixed "udp dport 443 ct state new" "$web_firewall"
 require_fixed "net.netfilter.nf_conntrack_max = 32768" mkosi.extra/usr/lib/sysctl.d/70-particleos-hardening.conf
 require_fixed "meta skuid certbot tcp dport { 80, 443 } ct state new limit rate 8/second burst 16 packets accept" "$web_firewall"
