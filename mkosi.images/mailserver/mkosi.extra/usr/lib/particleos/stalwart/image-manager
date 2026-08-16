@@ -360,7 +360,7 @@ initialize_image() {
         check_image_identity "$current" release
         check_host_compatibility release
         cleanup_images
-        return
+        return 0
     fi
 
     seed=$(select_seed)
@@ -417,7 +417,7 @@ import_staged_image() {
         sync -d "$staged"
         sync -d "$staging_dir"
         printf '%s' "$destination"
-        return
+        return 0
     fi
 
     promote_image "$staged" "$destination" "${staged##*/}"
@@ -445,7 +445,7 @@ activate_image() {
     declare -A candidate_release=()
 
     current=$(resolve_link current.raw) || die 'no selected Stalwart image exists'
-    [[ $candidate != "$current" ]] || return
+    [[ $candidate != "$current" ]] || return 0
     inspect_image "$current" current_release
     check_image_identity "$current" current_release
     inspect_image "$candidate" candidate_release
@@ -469,7 +469,7 @@ activate_image() {
         remove_link blocked.raw
         cleanup_images
         printf 'Activated Stalwart service image %s\n' "${candidate_release[IMAGE_VERSION]}"
-        return
+        return 0
     fi
 
     printf 'Stalwart candidate failed service health; restoring %s\n' \
@@ -513,7 +513,9 @@ update_image() {
     staged_images=("$staging_dir"/"$image_prefix"*"$image_suffix")
     # A successful no-op is normal while no release newer than the embedded
     # seed has been published. Keep the daily timer quiet in that state.
-    ((${#staged_images[@]} > 0)) || return
+    # A bare return here would inherit the failed predicate's status and turn
+    # the expected no-update path into a failed systemd service invocation.
+    ((${#staged_images[@]} > 0)) || return 0
     for image in "${staged_images[@]}"; do
         image_version=$(version_from_path "$image")
         if systemd-analyze compare-versions "$image_version" gt "$current_version" &&
@@ -523,8 +525,8 @@ update_image() {
             candidate_version=$image_version
         fi
     done
-    [[ -n $candidate ]] || return
-    [[ -n $blocked && ${candidate##*/} == "${blocked##*/}" ]] && return
+    [[ -n $candidate ]] || return 0
+    [[ -n $blocked && ${candidate##*/} == "${blocked##*/}" ]] && return 0
     managed_candidate=$(import_staged_image "$candidate")
     activate_image "$managed_candidate" yes
 }
@@ -567,7 +569,7 @@ rollback_image() {
         cleanup_images
         printf 'Rolled back Stalwart to service image %s\n' \
             "${previous_release[IMAGE_VERSION]}"
-        return
+        return 0
     fi
 
     atomic_link current.raw "$(relative_target "$current")"

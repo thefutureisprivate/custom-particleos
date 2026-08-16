@@ -878,7 +878,9 @@ require_fixed "temporary image did not inherit the protected SELinux label" \
     "$stalwart_image_manager"
 reject_fixed "chown root:root" "$stalwart_image_manager"
 reject_fixed "restorecon" "$stalwart_image_manager"
-require_fixed '((${#staged_images[@]} > 0)) || return' "$stalwart_image_manager"
+require_fixed '((${#staged_images[@]} > 0)) || return 0' "$stalwart_image_manager"
+require_fixed '[[ -n $candidate ]] || return 0' "$stalwart_image_manager"
+require_fixed '== "${blocked##*/}" ]] && return 0' "$stalwart_image_manager"
 require_fixed "resolve_optional_link" "$stalwart_image_manager"
 reject_fixed "resolve_link current.raw 2>/dev/null || true" "$stalwart_image_manager"
 require_fixed "minor/major Stalwart updates require a database-aware migration path" \
