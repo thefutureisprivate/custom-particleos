@@ -298,6 +298,20 @@ as an SELinux-labelled directory inside the TPM2/LUKS-encrypted writable root.
 The account is added to `wheel` and `systemd-journal`; no fixed account or
 password is built into the image.
 
+Before relying on remote administration, register the administrator's SSH
+public key in the systemd-homed identity from that first console session:
+
+```sh
+run0 homectl update "$USER" \
+    --ssh-authorized-keys='ssh-ed25519 REPLACE_WITH_THE_PUBLIC_KEY admin'
+userdbctl ssh-authorized-keys "$USER"
+```
+
+The public key is not a secret. Merely writing it to
+`~/.ssh/authorized_keys` is insufficient for cold-boot access because the
+encrypted home is still locked when sshd performs its initial authorization;
+sshd obtains pre-unlock keys from systemd-userdb instead.
+
 The first writable root receives a stable role-specific hostname derived from
 the machine ID (`particle-web-…` or `particle-mail-…`). An administrator may
 replace it with `hostnamectl`; that local setting persists across OS A/B

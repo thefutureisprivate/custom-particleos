@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Activate Stalwart service image %I
+Documentation=file:/usr/share/doc/particleos/stalwart/IMAGE-UPDATES.md
+Requires=particleos-module-lockdown.service particleos-stalwart-image-setup.service
+After=particleos-module-lockdown.service particleos-stalwart-image-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/particleos/stalwart/image-manager activate %I
+CapabilityBoundingSet=
+DevicePolicy=closed
+IPAddressDeny=any
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateIPC=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+ReadWritePaths=/var/lib/particleos/stalwart
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+UMask=0077

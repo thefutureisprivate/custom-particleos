@@ -347,6 +347,12 @@ its PAM helper as a root service, so authentication does not require a SUID
 executable. If that socket is unavailable, direct helper fallback fails closed
 after finalization removes the set-ID bit.
 
+The first console session must also register the administrator's public SSH key
+with `homectl update --ssh-authorized-keys=`. This places the non-secret key in
+the userdb identity that sshd can query while the encrypted home is still
+locked. An `authorized_keys` file inside that home remains unavailable during
+cold-boot authorization and is therefore not the supported provisioning path.
+
 Fedora's `mount` and `umount` binaries remain available at mode 0755, so
 administrators and recovery units can use them through an already privileged
 `run0` context without exposing their package-default SUID transition.

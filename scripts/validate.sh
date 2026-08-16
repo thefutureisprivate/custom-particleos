@@ -681,6 +681,8 @@ stalwart_host_abi="$mail_extra/usr/lib/particleos/stalwart/host-abi"
 stalwart_image_setup_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-image-setup.service"
 stalwart_update_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-update.service"
 stalwart_update_timer="$mail_extra/usr/lib/systemd/system/particleos-stalwart-update.timer"
+stalwart_activate_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-image-activate@.service"
+stalwart_rollback_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-image-rollback.service"
 stalwart_sysupdate="$mail_extra/usr/lib/sysupdate.stalwart.d/50-stalwart.transfer"
 stalwart_image_tmpfiles="$mail_extra/usr/lib/tmpfiles.d/particleos-stalwart-images.conf"
 stalwart_image_readme="$mail_extra/usr/share/doc/particleos/stalwart/IMAGE-UPDATES.md"
@@ -912,6 +914,24 @@ require_fixed "DevicePolicy=closed" "$stalwart_update_unit"
 require_fixed "NoNewPrivileges=yes" "$stalwart_update_unit"
 reject_fixed "NoNewPrivileges=no" "$stalwart_update_unit"
 require_fixed "RestrictNamespaces=yes" "$stalwart_update_unit"
+require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager activate %I" \
+    "$stalwart_activate_unit"
+require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager rollback" \
+    "$stalwart_rollback_unit"
+for stalwart_control_unit in "$stalwart_activate_unit" "$stalwart_rollback_unit"; do
+    require_fixed "CapabilityBoundingSet=" "$stalwart_control_unit"
+    require_fixed "DevicePolicy=closed" "$stalwart_control_unit"
+    require_fixed "IPAddressDeny=any" "$stalwart_control_unit"
+    require_fixed "NoNewPrivileges=yes" "$stalwart_control_unit"
+    require_fixed "PrivateNetwork=yes" "$stalwart_control_unit"
+    require_fixed "PrivateTmp=yes" "$stalwart_control_unit"
+    require_fixed "ProtectSystem=strict" "$stalwart_control_unit"
+    require_fixed "ReadWritePaths=/var/lib/particleos/stalwart" "$stalwart_control_unit"
+    require_fixed "RestrictAddressFamilies=AF_UNIX" "$stalwart_control_unit"
+    require_fixed "RestrictNamespaces=yes" "$stalwart_control_unit"
+done
+reject_fixed "run0 /usr/lib/particleos/stalwart/image-manager" \
+    "$stalwart_image_readme"
 require_fixed "OnCalendar=daily" "$stalwart_update_timer"
 require_fixed "Type=url-file" "$stalwart_sysupdate"
 require_fixed "Verify=yes" "$stalwart_sysupdate"
@@ -935,6 +955,10 @@ require_fixed 'transitions into Fedora'"'"'s confined `systemd_importd_t` domain
     "$stalwart_image_readme"
 require_fixed "sysupdate's installed" "$stalwart_image_readme"
 require_fixed "only the separately labelled" "$stalwart_image_readme"
+require_fixed 'homectl update "$USER"' README.md
+require_fixed "--ssh-authorized-keys=" README.md
+require_fixed "cold-boot access" README.md
+require_fixed "homectl update --ssh-authorized-keys=" docs/SECURITY-MODEL.md
 require_fixed '/usr/lib/systemd/import-pubring\.pgp -- system_u:object_r:systemd_conf_t:s0' \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed 'particleos_stalwart_managed_unit_t:s0' \

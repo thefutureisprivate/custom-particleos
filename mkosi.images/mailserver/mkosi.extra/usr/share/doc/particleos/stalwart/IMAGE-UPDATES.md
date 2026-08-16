@@ -66,6 +66,12 @@ Operators can inspect and control the independent application lifecycle with:
 ```sh
 run0 systemctl status particleos-stalwart-update.service
 run0 systemctl start particleos-stalwart-update.service
-run0 /usr/lib/particleos/stalwart/image-manager activate VERSION
-run0 /usr/lib/particleos/stalwart/image-manager rollback
+run0 systemctl start particleos-stalwart-image-activate@VERSION.service
+run0 systemctl start particleos-stalwart-image-rollback.service
 ```
+
+The control units deliberately execute the manager through PID 1 so SELinux
+transitions it into `stalwart_image_manager_t`. Directly executing the internal
+manager from an administrator shell is unsupported and does not receive that
+domain transition. Replace `VERSION` with the exact installed image version,
+for example `0.16.17.24`; the manager rejects any malformed instance value.
