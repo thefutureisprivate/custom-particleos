@@ -14,9 +14,9 @@ CapabilityBoundingSet=
 DevicePolicy=closed
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
-# systemd-sysupdate is labelled systemd_importd_exec_t and must transition out
-# of init_t. SELinux does not grant nnp_transition for that domain.
-NoNewPrivileges=no
+# systemd-sysupdate remains in the dedicated image-manager domain and asks the
+# separately confined systemd-importd service to acquire URLs over D-Bus.
+NoNewPrivileges=yes
 PrivateDevices=yes
 PrivateTmp=yes
 ProtectClock=yes
