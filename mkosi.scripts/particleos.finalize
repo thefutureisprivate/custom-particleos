@@ -20,6 +20,14 @@ ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/proc-sys-fs-binfmt_misc.mou
 # vendor sshd@ unit.
 ln -sfn /dev/null "$BUILDROOT/usr/lib/systemd/system/sshd-keygen.target"
 
+# The encrypted writable root persists across A/B updates, so a newly added
+# preset cannot enable first-boot provisioning in an existing /etc. Pull the
+# marker-conditional wizard from immutable /usr on every slot instead. This is
+# also the sole enablement path on a fresh root.
+mkdir -p "$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants"
+ln -sfn ../particleos-admin-firstboot.service \
+    "$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants/particleos-admin-firstboot.service"
+
 # Fedora's generic /usr/lib/systemd rule labels systemd-bless-boot as
 # init_exec_t. PID 1 consequently runs it in init_t, which may read the ESP but
 # cannot rename the boot-counted UKI after a successful update. Use the

@@ -640,7 +640,8 @@ require_fixed "RestrictAddressFamilies=AF_UNIX" "$admin_firstboot_unit"
 require_fixed "RestrictNamespaces=yes" "$admin_firstboot_unit"
 require_fixed "SystemCallFilter=@system-service" "$admin_firstboot_unit"
 require_fixed "WantedBy=multi-user.target" "$admin_firstboot_unit"
-require_fixed "enable particleos-admin-firstboot.service" "$base_preset"
+reject_fixed "enable particleos-admin-firstboot.service" "$base_preset"
+require_fixed "disable particleos-admin-firstboot.service" "$base_preset"
 require_fixed "disable systemd-homed.service" "$base_preset"
 require_fixed "disable systemd-homed-firstboot.service" "$base_preset"
 reject_fixed "enable systemd-homed" "$base_preset"
@@ -678,6 +679,11 @@ require_fixed 'homed_wants="$BUILDROOT/etc/systemd/system/systemd-homed.service.
 require_fixed '"$homed_wants/systemd-homed-activate.service"' "$finalize"
 require_fixed '"$homed_wants/systemd-homed-firstboot.service"' "$finalize"
 require_fixed 'rmdir "$homed_wants"' "$finalize"
+require_fixed 'mkdir -p "$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants"' \
+    "$finalize"
+require_fixed 'ln -sfn ../particleos-admin-firstboot.service' "$finalize"
+require_fixed '"$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants/particleos-admin-firstboot.service"' \
+    "$finalize"
 require_fixed "PermitRootLogin no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PasswordAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "HostKey /etc/ssh/ssh_host_ed25519_key"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf

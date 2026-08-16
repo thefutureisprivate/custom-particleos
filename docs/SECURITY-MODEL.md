@@ -340,6 +340,8 @@ attempt; normal mail retry semantics handle those runtime failures.
 There are no embedded user credentials. A console-only service blocks the first
 transition to `multi-user.target` until it creates a classic local user in
 `wheel` and `systemd-journal` inside the TPM2/LUKS-encrypted writable root. The
+marker-conditional service is pulled from immutable `/usr`, so it applies to
+both a fresh writable root and an A/B update of an unprovisioned system. The
 wizard requires a password of at least 14 characters and a syntactically valid
 raw Ed25519 public key. It passes the plaintext password only through a private
 pipe to `chpasswd`, clears the shell variables, creates the home at mode 0700

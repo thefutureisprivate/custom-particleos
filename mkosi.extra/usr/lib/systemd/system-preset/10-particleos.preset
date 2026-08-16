@@ -27,7 +27,9 @@ enable sshd.socket
 disable authselect-apply-changes.service
 disable systemd-homed.service
 disable systemd-homed-firstboot.service
-enable particleos-admin-firstboot.service
+# Immutable vendor enablement makes this conditional service apply equally to
+# fresh roots and A/B upgrades without writing a duplicate link into /etc.
+disable particleos-admin-firstboot.service
 # Authentication helpers run as root through a private AF_UNIX socket instead
 # of gaining privilege from executable file mode bits.
 enable polkit-agent-helper.socket
