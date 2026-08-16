@@ -614,7 +614,7 @@ require_fixed '0000000b7373682d6564323535313900000020' "$admin_firstboot"
 require_fixed 'ssh-keygen -l -f "/home/$username/.ssh/authorized_keys"' "$admin_firstboot"
 require_fixed '(allow .useradd_t .systemd_userdbd_runtime_t (sock_file (read)))' \
     mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
-require_fixed '(allow .passwd_t .init_t (fifo_file (read)))' \
+require_fixed '(allow .passwd_t .init_t (fifo_file (getattr read)))' \
     mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
 require_fixed '(allow .init_t .init_t (passwd (passwd)))' \
     mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil

@@ -43,7 +43,7 @@
   (allow .init_t .passwd_t (process (transition)))
   (typetransition .init_t .passwd_exec_t process .passwd_t)
   (allow .init_t .passwd_t (process2 (nosuid_transition)))
-  (allow .passwd_t .init_t (fifo_file (read)))
+  (allow .passwd_t .init_t (fifo_file (getattr read)))
   (allow .init_t .init_t (passwd (passwd)))
   (allow .init_t .ssh_keygen_t (process2 (nosuid_transition)))
   (allow .init_t .setfiles_t (process2 (nosuid_transition)))
