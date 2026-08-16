@@ -1,8 +1,9 @@
 ; SPDX-License-Identifier: LGPL-2.1-or-later
 
-; The counted-boot mail health service runs directly under PID 1's init_t
-; domain. Permit only the SELinux port-name checks required for its bounded
-; loopback protocol probes. IPAddressAllow=localhost and IPAddressDeny=any in
+; The mail health service runs directly under PID 1's init_t on every boot and
+; after an application-image activation. Permit only the SELinux port-name
+; checks required for its bounded loopback protocol probes.
+; IPAddressAllow=localhost and IPAddressDeny=any in
 ; the unit independently prevent these grants from authorizing a connection
 ; to a remote service.
 ;

@@ -326,8 +326,10 @@ external port-53 firewall path. Its resolver uses resolved's loopback-only
 `127.0.0.54:53` TCP proxy, which preserves DNSSEC records and translates the
 upstream transport to the same authenticated Cloudflare DoT path; Stalwart
 validates those records itself for DANE. Ordinary applications remain on the
-full `127.0.0.53` validating stub. The counted-boot mail health gate fails if a
-signed name cannot be resolved through this path.
+full `127.0.0.53` validating stub. The mail health gate verifies only the local
+resolver listener and a bounded `localhost` transaction. An upstream network,
+Cloudflare, or public-DNS outage must not consume an otherwise healthy OS boot
+attempt; normal mail retry semantics handle those runtime failures.
 
 ## Administration
 

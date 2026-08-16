@@ -1,0 +1,20 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+
+# The relabel pass immediately precedes this hook. Fail the build if the DDI
+# would not transition into the dedicated host policy domain.
+test "$(stat --format=%C "$BUILDROOT/usr/bin/stalwart")" = \
+    system_u:object_r:stalwart_exec_t:s0
+test "$(stat --format=%C "$BUILDROOT/usr/share/stalwart/webui.zip")" = \
+    system_u:object_r:stalwart_etc_t:s0
+
+# No executable in the service DDI needs a set-ID transition. The allocator's
+# non-executable loader metadata is intentionally unaffected.
+find "$BUILDROOT" -xdev -type f -perm /6000 -perm /0111 \
+    -exec chmod a-s -- {} +
+if find "$BUILDROOT" -xdev -type f -perm /6000 -perm /0111 -print -quit |
+        grep -q .; then
+    echo 'set-ID executable remains in Stalwart service image' >&2
+    exit 1
+fi

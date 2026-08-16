@@ -7,7 +7,10 @@ creates the unprivileged stalwart database role, and authenticates the
 stalwart OS account through PostgreSQL peer authentication on
 /run/postgresql. There is no database password or environment file.
 
-PostgreSQL, role provisioning, and Stalwart are enabled by the image. A fresh
+PostgreSQL, role provisioning, and Stalwart are enabled by the OS. The
+executable, allocator libraries, and WebUI run from the signed, release-pinned
+service image selected at `/var/lib/particleos/stalwart/current.raw`; they are
+not installed in the host `/usr`. A fresh
 registry starts with `STALWART_RECOVERY_MODE=1`; the service journal contains a
 random temporary `admin` credential which is valid only on the loopback-only
 recovery UI. Retrieve it locally with:
@@ -25,7 +28,8 @@ Complete application bootstrap as follows:
    ParticleOS auto-recovery policy then selects the normal protocol profile;
    an unprovisioned registry remains in recovery mode.
 
-The counted update-health gate reads Stalwart's post-migration mode marker. In
+The mail health gate reads Stalwart's post-migration mode marker on every boot
+and after every application-image activation. In
 recovery mode it validates the database and the loopback recovery WebUI. In
 normal mode it performs bounded SMTP, SMTPS, IMAPS and HTTPS exchanges on IPv4
 and IPv6, validates each TLS certificate, checks browser security headers, and
@@ -52,10 +56,13 @@ start from local dependencies and bind their sockets even when the VPS has no
 carrier or address. A unit condition also makes vendor or stale enablement of
 the wait service non-blocking. Network configuration continues asynchronously.
 
-The WebUI is a checksum-pinned RPM payload in immutable /usr. Stalwart rejects
-every application-bundle URL except file:///usr/share/stalwart/webui.zip and
-reloads that file on every process start instead of consulting its mutable blob
-cache, so the WebUI is atomic with the signed OBS OS update.
+The WebUI is a checksum-pinned payload inside the signed, dm-verity-protected
+service image. Stalwart rejects every application-bundle URL except
+`file:///usr/share/stalwart/webui.zip` and reloads that file on every process
+start instead of consulting its mutable blob cache, so the WebUI is atomic with
+the selected Stalwart image rather than with an OS A/B slot. The expected
+digests are copied from that same mounted image into the private runtime
+directory before startup and are checked by the health gate.
 
 PostgreSQL continuous WAL archiving, verified base backups, retention rules and
 the recovery procedure are documented in BACKUP-RECOVERY.md. PITR stays off
@@ -70,6 +77,9 @@ HTTP port types. Diagnose the mail stack with:
     run0 systemctl start particleos-mailserver-health.service
     run0 journalctl -u particleos-mailserver-health.service
     run0 -u stalwart psql --host=/run/postgresql --dbname=stalwart --command='SELECT 1'
+
+Independent application-image acquisition, compatibility metadata, atomic
+selection, and rollback are documented in `IMAGE-UPDATES.md`.
 
 Health exit codes are 10 listener absent, 20 TLS failure, 30 certificate
 failure, 40 protocol failure, 50 datastore failure and 60 WebUI mismatch.

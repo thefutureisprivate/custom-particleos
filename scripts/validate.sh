@@ -49,20 +49,26 @@ declare -A role_image_ids=(
 )
 declare -A role_packages=(
     [webserver]="certbot nginx-core"
-    [mailserver]="openssl postgresql-contrib postgresql-server stalwart"
+    [mailserver]="openssl postgresql-contrib postgresql-server stalwart-particleos-host"
 )
 base_config=mkosi.images/base/mkosi.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
+stalwart_service_config=mkosi.images/stalwart-service/mkosi.conf
+stalwart_service_release=mkosi.images/stalwart-service/mkosi.extra/usr/lib/particleos/stalwart/release
 role_policy=mkosi.role.conf
 obs_config=mkosi.obs.conf
 role_obs_config=mkosi.role.obs.conf
+service_obs_config=mkosi.service.obs.conf
 obs_postoutput=mkosi.scripts/particleos-obs-postoutput
 obs_build=mkosi.scripts/particleos-obs-build
 obs_recipe=.obs/fedora/x86-64/mkosi.conf
+stalwart_obs_recipe=.obs/stalwart-image/x86-64/mkosi.conf
 service_template=.obs/fedora/x86-64/_service.example
+stalwart_service_template=.obs/stalwart-image/x86-64/_service.example
+project_cert_installer=mkosi.scripts/particleos.install-project-cert
 postinst=mkosi.scripts/particleos.postinst.chroot
 finalize=mkosi.scripts/particleos.finalize
-obs_recipes=("$obs_recipe")
+obs_recipes=("$obs_recipe" "$stalwart_obs_recipe")
 
 require_fixed "Dependencies=webserver,mailserver" mkosi.conf
 reject_fixed "Dependencies=dnsserver" mkosi.conf
@@ -76,6 +82,10 @@ require_fixed "Release=44" mkosi.conf
 require_fixed "Architecture=x86-64" mkosi.conf
 require_fixed "Mirror=https://dl.fedoraproject.org/pub/fedora" mkosi.conf
 require_fixed "ToolsTreeMirror=https://download.opensuse.org" mkosi.conf
+stalwart_selector=mkosi.conf.d/90-stalwart-image.conf
+require_fixed "PathExists=/usr/src/packages/SOURCES/stalwart-image.build" "$stalwart_selector"
+require_fixed "Dependencies=" "$stalwart_selector"
+require_fixed "Dependencies=stalwart-service" "$stalwart_selector"
 
 require_fixed "Format=directory" "$base_config"
 require_fixed "Output=base" "$base_config"
@@ -134,6 +144,7 @@ require_fixed "%D/mkosi.resources:/usr/lib/particleos/sysupdate-key-source" "$ro
 require_fixed "SecureBoot=yes" "$role_policy"
 require_fixed "SignExpectedPcr=no" "$role_policy"
 require_fixed "PostInstallationScripts=%D/$postinst" "$role_policy"
+require_fixed "PostInstallationScripts=%D/$project_cert_installer" "$role_policy"
 require_fixed "FinalizeScripts=%D/$finalize" "$role_policy"
 require_fixed "KernelInitrdModules=default,-binfmt_misc" "$role_policy"
 require_fixed "PostOutputScripts=%D/mkosi.scripts/remove-first-pass-checksum" "$role_policy"
@@ -150,8 +161,13 @@ require_fixed "Verity=defer" "$role_obs_config"
 require_fixed "Checksum=yes" "$role_obs_config"
 require_fixed "ExtraTrees=%D/mkosi.obs.extra" "$role_obs_config"
 require_fixed "PostOutputScripts=%D/$obs_postoutput" "$role_obs_config"
+reject_fixed "PostInstallationScripts=%D/$project_cert_installer" "$role_obs_config"
 require_fixed "Include=%D/mkosi.role.obs.conf" "$role_policy"
 reject_fixed "Include=mkosi-obs" "$role_policy"
+test -x "$project_cert_installer" || fail "$project_cert_installer must be executable"
+require_fixed '[[ -f $certificate ]] || exit 0' "$project_cert_installer"
+require_fixed 'openssl x509 -in "$certificate" -noout' "$project_cert_installer"
+require_fixed 'particleos-obs-project.crt' "$project_cert_installer"
 test -x "$obs_postoutput" || fail "$obs_postoutput must be executable"
 test -x "$obs_build" || fail "$obs_build must be executable"
 require_fixed "import mkosi.resources" "$obs_postoutput"
@@ -173,19 +189,19 @@ require_fixed 's#/usr/src/packages/SOURCES#$staged_sources_dir#g' "$obs_build"
 require_fixed 'grep -qF "cp -rL $staged_sources_dir/"' "$obs_build"
 require_fixed 'release_sources_dir=$staged_sources_dir' "$obs_build"
 require_fixed 'copy_release_metadata "$release_sources_dir/base.manifest.gz"' "$obs_build"
-require_fixed 'role_roothashes=("$obs_sources_dir"/ParticleOS-*.roothash)' "$obs_build"
-require_fixed 'role_prefix=${roothash%.roothash}' "$obs_build"
-require_fixed 'role_basename=${role_prefix##*/}' "$obs_build"
+require_fixed 'image_roothashes=("$obs_sources_dir"/ParticleOS-*.roothash)' "$obs_build"
+require_fixed 'image_prefix=${roothash%.roothash}' "$obs_build"
+require_fixed 'image_basename=${image_prefix##*/}' "$obs_build"
 require_fixed 'materialize_repart_label "${roothash%.roothash}" "$staged_sources_dir"' "$obs_build"
 require_fixed 'label="${image_id}_${image_version}_vsig"' "$obs_build"
 require_fixed 'if ((${#label} > 36))' "$obs_build"
 require_fixed "hashes.cpio.rsasign.sig" "$obs_build"
 require_fixed 'rm -- "$staged_repart_tar"' "$obs_build"
 reject_fixed 'mv -- "$rewritten_tar" "$repart_tar"' "$obs_build"
-for role_metadata_suffix in manifest.gz osrelease repart.tar; do
-    require_fixed 'copy_release_metadata "$release_sources_dir/$role_basename.'"$role_metadata_suffix"'"' "$obs_build"
+for image_metadata_suffix in manifest.gz osrelease repart.tar; do
+    require_fixed 'copy_release_metadata "$release_sources_dir/$image_basename.'"$image_metadata_suffix"'"' "$obs_build"
 done
-require_fixed "No ParticleOS role roothashes were supplied to the signing pass" "$obs_build"
+require_fixed "No ParticleOS image roothashes were supplied to the signing pass" "$obs_build"
 
 for verity_sig_repart in \
         mkosi.repart/10-usr-verity-sig.conf \
@@ -206,8 +222,72 @@ xmllint --noout "$service_template"
 require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" "$service_template"
 require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$service_template"
 require_fixed ".obs/fedora/x86-64/mkosi.conf" "$service_template"
+xmllint --noout "$stalwart_service_template"
+xmllint --noout .obs/stalwart-image-meta.example.xml
+require_fixed "# needssslcertforbuild" "$stalwart_obs_recipe"
+require_fixed "Dependencies=stalwart-service" "$stalwart_obs_recipe"
+require_fixed "stalwart-particleos-user" "$stalwart_obs_recipe"
+require_fixed "stalwart-selinux" "$stalwart_obs_recipe"
+require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" \
+    "$stalwart_service_template"
+require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$stalwart_service_template"
+require_fixed ".obs/stalwart-image/x86-64/mkosi.conf" "$stalwart_service_template"
+require_fixed ".obs/stalwart-image/x86-64/stalwart-image.build" \
+    "$stalwart_service_template"
+require_fixed '<enable repository="stalwart_images" arch="x86_64"/>' \
+    .obs/stalwart-image-meta.example.xml
 require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
+
+require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.13" "$stalwart_service_config"
+require_fixed "Format=disk" "$stalwart_service_config"
+require_fixed "Bootable=no" "$stalwart_service_config"
+require_fixed "SELinuxRelabel=yes" "$stalwart_service_config"
+require_fixed "RepartDirectories=%D/mkosi.images/stalwart-service/mkosi.repart" \
+    "$stalwart_service_config"
+require_fixed "Include=%D/mkosi.service.obs.conf" "$stalwart_service_config"
+for service_package in \
+        hardened_malloc \
+        no_rlimit_as \
+        stalwart \
+        stalwart-particleos-user \
+        stalwart-selinux; do
+    require_fixed "$service_package" "$stalwart_service_config"
+    require_fixed "$service_package" "$stalwart_obs_recipe"
+done
+reject_fixed "stalwart-particleos-host" "$stalwart_service_config"
+require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$service_obs_config"
+require_fixed "CompressOutput=zstd" "$service_obs_config"
+require_fixed "Verity=defer" "$service_obs_config"
+require_fixed "PostOutputScripts=%D/$obs_postoutput" "$service_obs_config"
+for repart_definition in \
+        mkosi.images/stalwart-service/mkosi.repart/10-root-verity-sig.conf \
+        mkosi.images/stalwart-service/mkosi.repart/11-root-verity.conf \
+        mkosi.images/stalwart-service/mkosi.repart/12-root.conf; do
+    test -f "$repart_definition" || fail "$repart_definition is missing"
+done
+require_fixed "Type=root-verity-sig" \
+    mkosi.images/stalwart-service/mkosi.repart/10-root-verity-sig.conf
+require_fixed "Type=root-verity" \
+    mkosi.images/stalwart-service/mkosi.repart/11-root-verity.conf
+require_fixed "Type=root" mkosi.images/stalwart-service/mkosi.repart/12-root.conf
+require_fixed "Format=erofs" mkosi.images/stalwart-service/mkosi.repart/12-root.conf
+require_fixed "Verity=data" mkosi.images/stalwart-service/mkosi.repart/12-root.conf
+require_fixed "VerityMatchKey=root" \
+    mkosi.images/stalwart-service/mkosi.repart/10-root-verity-sig.conf
+require_fixed "VerityMatchKey=root" \
+    mkosi.images/stalwart-service/mkosi.repart/11-root-verity.conf
+require_fixed "VerityMatchKey=root" mkosi.images/stalwart-service/mkosi.repart/12-root.conf
+for metadata_key in \
+        METADATA_VERSION IMAGE_ID IMAGE_VERSION STALWART_VERSION \
+        STALWART_PACKAGE_RELEASE WEBUI_VERSION HOST_ABI_MIN HOST_ABI_MAX \
+        DATABASE_FORMAT DATABASE_SCHEMA DATABASE_MIGRATION UPDATE_KIND \
+        AUTOMATIC_UPDATE ROLLBACK_COMPATIBLE_FROM; do
+    require_fixed "$metadata_key=" "$stalwart_service_release"
+done
+require_fixed "UPDATE_KIND=seed" "$stalwart_service_release"
+require_fixed "AUTOMATIC_UPDATE=no" "$stalwart_service_release"
 
 if ! diff -u \
         <({
@@ -349,7 +429,10 @@ require_fixed "project: home:thefutureisprivate" .obs/workflows.example.yml
 require_fixed '<path project="Fedora:44" repository="update"/>' .obs/project-meta.example.xml
 require_fixed '<path project="system:systemd" repository="Fedora_44"/>' .obs/project-meta.example.xml
 require_fixed '<repository name="particleos_base_Fedora_44">' .obs/project-meta.example.xml
+require_fixed '<repository name="stalwart_images">' .obs/project-meta.example.xml
 require_fixed '<path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>' \
+    .obs/project-meta.example.xml
+require_fixed '<path project="home:thefutureisprivate" repository="stalwart_Fedora_44"/>' \
     .obs/project-meta.example.xml
 require_fixed '<path project="home:thefutureisprivate" repository="Fedora_44"/>' \
     .obs/project-meta.example.xml
@@ -381,7 +464,8 @@ done
 
 require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/Fedora_44/" mkosi.resources/particleos-obs.repo
 require_fixed "priority=1" mkosi.resources/particleos-obs.repo
-require_fixed "includepkgs=stalwart" mkosi.resources/particleos-obs.repo
+require_fixed "includepkgs=stalwart,stalwart-particleos-host,stalwart-particleos-user,stalwart-selinux" \
+    mkosi.resources/particleos-obs.repo
 require_fixed "skip_if_unavailable=False" mkosi.resources/particleos-obs.repo
 require_fixed "repo_gpgcheck=1" mkosi.resources/particleos-obs.repo
 require_fixed "baseurl=https://download.opensuse.org/repositories/home:/thefutureisprivate/particleos_base_Fedora_44/" \
@@ -492,6 +576,14 @@ stalwart_db_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-databas
 stalwart_db_setup="$mail_extra/usr/lib/particleos/postgresql/provision-stalwart"
 mail_health_unit="$mail_extra/usr/lib/systemd/system/particleos-mailserver-health.service"
 mail_health_check="$mail_extra/usr/lib/particleos/health/mailserver"
+stalwart_image_manager="$mail_extra/usr/lib/particleos/stalwart/image-manager"
+stalwart_host_abi="$mail_extra/usr/lib/particleos/stalwart/host-abi"
+stalwart_image_setup_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-image-setup.service"
+stalwart_update_unit="$mail_extra/usr/lib/systemd/system/particleos-stalwart-update.service"
+stalwart_update_timer="$mail_extra/usr/lib/systemd/system/particleos-stalwart-update.timer"
+stalwart_sysupdate="$mail_extra/usr/lib/sysupdate.stalwart.d/50-stalwart.transfer"
+stalwart_image_tmpfiles="$mail_extra/usr/lib/tmpfiles.d/particleos-stalwart-images.conf"
+stalwart_image_readme="$mail_extra/usr/share/doc/particleos/stalwart/IMAGE-UPDATES.md"
 require_fixed "authenticator = webroot" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "webroot-path = /var/www/html" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "required-profile = shortlived" $web_extra/usr/lib/particleos/certbot/cli.ini
@@ -538,8 +630,10 @@ reject_fixed "dport 8080" "$mail_firewall"
 reject_fixed "dport { 110, 143, 587" "$mail_firewall"
 require_fixed "enable postgresql.service" "$mail_preset"
 require_fixed "enable particleos-stalwart-database.service" "$mail_preset"
+require_fixed "enable particleos-stalwart-image-setup.service" "$mail_preset"
 require_fixed "enable stalwart.service" "$mail_preset"
 require_fixed "enable particleos-mailserver-health.service" "$mail_preset"
+require_fixed "enable particleos-stalwart-update.timer" "$mail_preset"
 reject_fixed "network-online.target" "$mail_health_unit"
 require_fixed "Requires=nftables.service particleos-module-lockdown.service postgresql.service particleos-stalwart-database.service systemd-resolved.service" "$mail_dropin"
 require_fixed "After=nftables.service particleos-module-lockdown.service postgresql.service particleos-stalwart-database.service systemd-resolved.service" "$mail_dropin"
@@ -554,6 +648,10 @@ require_fixed "127.0.0.54:53" "$mail_readme"
 require_fixed "There is no database password or environment file." "$mail_readme"
 require_fixed "systemd-resolved" "$mail_readme"
 reject_fixed "STALWART_DB_PASSWORD" "$mail_readme"
+require_fixed "executable, allocator libraries, and WebUI run from the signed, release-pinned" \
+    "$mail_readme"
+require_fixed "/var/lib/particleos/stalwart/current.raw" "$mail_readme"
+reject_fixed "WebUI is a checksum-pinned RPM payload in immutable /usr" "$mail_readme"
 require_fixed "Requires=particleos-postgresql-setup.service" "$postgres_dropin"
 require_fixed "RestrictAddressFamilies=AF_UNIX" "$postgres_dropin"
 require_fixed "IPAddressDeny=any" "$postgres_dropin"
@@ -623,6 +721,49 @@ require_fixed "/usr/share/selinux/packages/particleos_stalwart.pp" mkosi.scripts
 if rg -n 'STALWART_DB_PASSWORD|authSecret.*EnvironmentVariable' "$mail_extra"; then
     fail "mailserver must not carry a database secret in the environment"
 fi
+
+test -x "$stalwart_image_manager" || fail "$stalwart_image_manager must be executable"
+require_fixed "HOST_ABI_CURRENT=1" "$stalwart_host_abi"
+require_fixed "HOST_ABI_ROLLBACK=1" "$stalwart_host_abi"
+require_fixed 'RootImagePolicy=$image_policy' "$stalwart_image_manager"
+require_fixed "systemd-run --quiet --wait --pipe --collect" "$stalwart_image_manager"
+require_fixed "systemd-sysupdate --component=stalwart update" "$stalwart_image_manager"
+require_fixed "resolve_optional_link" "$stalwart_image_manager"
+reject_fixed "resolve_link current.raw 2>/dev/null || true" "$stalwart_image_manager"
+require_fixed "minor/major Stalwart updates require a database-aware migration path" \
+    "$stalwart_image_manager"
+require_fixed "only explicitly compatible patch images may activate automatically" \
+    "$stalwart_image_manager"
+require_fixed "ROLLBACK_COMPATIBLE_FROM" "$stalwart_image_manager"
+require_fixed "atomic_link previous.raw" "$stalwart_image_manager"
+require_fixed "atomic_link current.raw" "$stalwart_image_manager"
+require_fixed "particleos-mailserver-health.service" "$stalwart_image_manager"
+require_fixed "blocked.raw" "$stalwart_image_manager"
+require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager initialize" \
+    "$stalwart_image_setup_unit"
+require_fixed "RequiresMountsFor=/var/lib/particleos/stalwart" \
+    "$stalwart_image_setup_unit"
+require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager update" \
+    "$stalwart_update_unit"
+require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups" \
+    "$stalwart_update_unit"
+require_fixed "NoNewPrivileges=no" "$stalwart_update_unit"
+reject_fixed "NoNewPrivileges=yes" "$stalwart_update_unit"
+require_fixed "OnCalendar=daily" "$stalwart_update_timer"
+require_fixed "Type=url-file" "$stalwart_sysupdate"
+require_fixed "Verify=yes" "$stalwart_sysupdate"
+require_fixed "Path=https://download.opensuse.org/repositories/home:/thefutureisprivate/stalwart_images/" \
+    "$stalwart_sysupdate"
+require_fixed "Type=regular-file" "$stalwart_sysupdate"
+require_fixed "Path=/var/lib/particleos/stalwart/images" "$stalwart_sysupdate"
+require_fixed "ReadOnly=yes" "$stalwart_sysupdate"
+require_fixed "InstancesMax=4" "$stalwart_sysupdate"
+reject_fixed "CurrentSymlink=" "$stalwart_sysupdate"
+require_fixed "d /var/lib/particleos/stalwart/images 0700 root root -" \
+    "$stalwart_image_tmpfiles"
+require_fixed "OS A/B updates and rollbacks never" "$stalwart_image_readme"
+require_fixed "UPDATE_KIND=patch" "$stalwart_image_readme"
+require_fixed "database-aware migration" "$stalwart_image_readme"
 require_fixed "meta skuid systemd-resolve ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 853 accept" "$base_firewall"
 require_fixed "meta skuid systemd-resolve ip6 daddr { 2606:4700:4700::1111, 2606:4700:4700::1001 } tcp dport 853 accept" "$base_firewall"
 require_fixed "meta skuid chrony tcp dport 4460 accept" "$base_firewall"
@@ -666,9 +807,9 @@ require_fixed 'if [[ $IMAGE_ID == ParticleOS-Webserver ]]' \
 require_fixed ".init_t .http_port_t (tcp_socket (name_connect))" \
     "$web_health_policy"
 require_fixed "Requires=systemd-resolved.service postgresql.service particleos-stalwart-database.service stalwart.service" "$mail_health_unit"
-require_fixed "Before=boot-complete.target" "$mail_health_unit"
-require_fixed "FailureAction=reboot" "$mail_health_unit"
-require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" "$mail_health_unit"
+require_fixed "Before=systemd-boot-check-no-failures.service boot-complete.target" "$mail_health_unit"
+reject_fixed "FailureAction=" "$mail_health_unit"
+reject_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath" "$mail_health_unit"
 require_fixed "RequiredBy=boot-complete.target" "$mail_health_unit"
 require_fixed "User=stalwart" "$mail_health_unit"
 require_fixed "IPAddressAllow=localhost" "$mail_health_unit"
@@ -686,8 +827,8 @@ require_fixed "/usr/bin/openssl s_client" "$mail_health_check"
 require_fixed "/usr/bin/openssl x509" "$mail_health_check"
 require_fixed "EHLO health.particleos.invalid" "$mail_health_check"
 require_fixed "a1 CAPABILITY" "$mail_health_check"
-require_fixed "/usr/share/stalwart/webui-admin.sha256" "$mail_health_check"
-require_fixed "/usr/share/stalwart/webui-account.sha256" "$mail_health_check"
+require_fixed "/run/stalwart/webui-admin.sha256" "$mail_health_check"
+require_fixed "/run/stalwart/webui-account.sha256" "$mail_health_check"
 require_fixed "/run/stalwart/particleos-mode" "$mail_health_check"
 require_fixed 'exec 3<>"/dev/tcp/$address/$port" || return 1' "$mail_health_check"
 require_fixed "for address in 127.0.0.1 ::1" "$mail_health_check"

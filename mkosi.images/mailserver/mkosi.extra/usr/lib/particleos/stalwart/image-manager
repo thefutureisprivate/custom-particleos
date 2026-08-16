@@ -1,0 +1,484 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+umask 0077
+
+readonly state_dir=/var/lib/particleos/stalwart
+readonly images_dir=$state_dir/images
+readonly seed_dir=/usr/lib/particleos/stalwart/seed
+readonly host_abi_file=/usr/lib/particleos/stalwart/host-abi
+readonly image_policy='root=verity+signed+read-only-on+erofs:=absent'
+readonly image_prefix=ParticleOS-Stalwart_
+readonly image_suffix=_x86-64.raw
+
+declare -A host_abi=()
+
+die() {
+    printf 'particleos-stalwart-image: %s\n' "$*" >&2
+    exit 1
+}
+
+parse_record() {
+    local file=$1
+    local output_name=$2
+    local kind=$3
+    local line key value
+    local -n output=$output_name
+
+    output=()
+    while IFS= read -r line || [[ -n $line ]]; do
+        [[ -n $line && $line != *[[:space:]]* ]] ||
+            die "$kind metadata contains whitespace or an empty line"
+        [[ $line == *=* ]] || die "$kind metadata contains a malformed line"
+        key=${line%%=*}
+        value=${line#*=}
+        [[ $key =~ ^[A-Z][A-Z0-9_]*$ && -n $value ]] ||
+            die "$kind metadata contains an invalid assignment"
+        [[ ! -v output[$key] ]] || die "$kind metadata repeats $key"
+        output["$key"]=$value
+    done <"$file"
+}
+
+require_keys() {
+    local record_name=$1
+    shift
+    local -n record=$record_name
+    local key
+
+    for key in "$@"; do
+        [[ -v record[$key] ]] || die "metadata is missing $key"
+    done
+}
+
+load_host_abi() {
+    parse_record "$host_abi_file" host_abi 'host ABI'
+    require_keys host_abi ABI_METADATA_VERSION HOST_ABI_CURRENT HOST_ABI_ROLLBACK
+    ((${#host_abi[@]} == 3)) || die 'host ABI metadata contains an unknown field'
+    [[ ${host_abi[ABI_METADATA_VERSION]} == 1 ]] || die 'unsupported host ABI metadata version'
+    [[ ${host_abi[HOST_ABI_CURRENT]} =~ ^[0-9]+$ ]] || die 'invalid current host ABI'
+    [[ ${host_abi[HOST_ABI_ROLLBACK]} =~ ^[0-9]+$ ]] || die 'invalid rollback host ABI'
+}
+
+validate_image_file() {
+    local image=$1
+    local mode
+
+    [[ -f $image && ! -L $image ]] || die "service image is not a regular file: $image"
+    [[ $(stat --format=%u:%g "$image") == 0:0 ]] || die "service image is not root-owned: $image"
+    mode=$(stat --format=%a "$image")
+    (((8#$mode & 022) == 0)) || die "service image is group/world writable: $image"
+}
+
+inspect_image() {
+    local image=$1
+    local output_name=$2
+    local metadata
+    local -n release_record=$output_name
+
+    validate_image_file "$image"
+    metadata=$(mktemp)
+    if ! systemd-run --quiet --wait --pipe --collect --service-type=exec \
+            --property="RootImage=$image" \
+            --property="RootImageOptions=root:ro,nosuid,nodev" \
+            --property="RootImagePolicy=$image_policy" \
+            --property=User=stalwart \
+            --property=Group=stalwart \
+            --property=CapabilityBoundingSet= \
+            --property=DevicePolicy=closed \
+            --property=IPAddressDeny=any \
+            --property=LockPersonality=yes \
+            --property=MemoryDenyWriteExecute=yes \
+            --property=NoNewPrivileges=yes \
+            --property=PrivateDevices=yes \
+            --property=PrivateNetwork=yes \
+            --property=PrivateTmp=yes \
+            --property=ProtectClock=yes \
+            --property=ProtectControlGroups=yes \
+            --property=ProtectHome=yes \
+            --property=ProtectHostname=yes \
+            --property=ProtectKernelLogs=yes \
+            --property=ProtectKernelModules=yes \
+            --property=ProtectKernelTunables=yes \
+            --property=ProtectProc=invisible \
+            --property=ProtectSystem=strict \
+            --property=RestrictAddressFamilies=AF_UNIX \
+            --property=RestrictNamespaces=yes \
+            --property=RestrictRealtime=yes \
+            --property=RestrictSUIDSGID=yes \
+            --property=SystemCallArchitectures=native \
+            /usr/bin/cat /usr/lib/particleos/stalwart/release >"$metadata"; then
+        rm -f -- "$metadata"
+        die "signature, dm-verity, or metadata inspection failed: $image"
+    fi
+
+    parse_record "$metadata" "$output_name" 'service image'
+    rm -f -- "$metadata"
+    require_keys "$output_name" \
+        METADATA_VERSION IMAGE_ID IMAGE_VERSION STALWART_VERSION \
+        STALWART_PACKAGE_RELEASE WEBUI_VERSION HOST_ABI_MIN HOST_ABI_MAX \
+        DATABASE_FORMAT DATABASE_SCHEMA DATABASE_MIGRATION UPDATE_KIND \
+        AUTOMATIC_UPDATE ROLLBACK_COMPATIBLE_FROM
+    ((${#release_record[@]} == 14)) || die 'service-image metadata contains an unknown field'
+
+    [[ ${release_record[METADATA_VERSION]} == 1 ]] || die 'unsupported service-image metadata version'
+    [[ ${release_record[IMAGE_ID]} == ParticleOS-Stalwart ]] || die 'unexpected service-image identity'
+    [[ ${release_record[IMAGE_VERSION]} =~ ^[0-9]+(\.[0-9]+)+$ ]] || die 'invalid service-image version'
+    [[ ${release_record[STALWART_VERSION]} =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'invalid Stalwart version'
+    [[ ${release_record[STALWART_PACKAGE_RELEASE]} =~ ^[0-9]+$ ]] || die 'invalid Stalwart package release'
+    [[ ${release_record[WEBUI_VERSION]} =~ ^[0-9]+(\.[0-9]+)+$ ]] || die 'invalid WebUI version'
+    [[ ${release_record[HOST_ABI_MIN]} =~ ^[0-9]+$ && ${release_record[HOST_ABI_MAX]} =~ ^[0-9]+$ ]] ||
+        die 'invalid service-image host ABI range'
+    [[ ${release_record[DATABASE_FORMAT]} =~ ^[A-Za-z0-9._-]+$ ]] || die 'invalid database format'
+    [[ ${release_record[DATABASE_SCHEMA]} =~ ^[A-Za-z0-9._-]+$ ]] || die 'invalid database schema'
+    [[ ${release_record[DATABASE_MIGRATION]} =~ ^[a-z0-9-]+$ ]] || die 'invalid database migration mode'
+    [[ ${release_record[UPDATE_KIND]} =~ ^[a-z0-9-]+$ ]] || die 'invalid update kind'
+    [[ ${release_record[AUTOMATIC_UPDATE]} == yes || ${release_record[AUTOMATIC_UPDATE]} == no ]] ||
+        die 'invalid automatic-update flag'
+    [[ ${release_record[ROLLBACK_COMPATIBLE_FROM]} =~ ^[0-9.]+(:[0-9.]+)*$ ]] ||
+        die 'invalid rollback compatibility list'
+}
+
+version_from_path() {
+    local path=$1
+    local name=${path##*/}
+
+    [[ $name == "$image_prefix"*"$image_suffix" ]] || die "unexpected service-image filename: $name"
+    name=${name#"$image_prefix"}
+    name=${name%"$image_suffix"}
+    [[ $name =~ ^[0-9]+(\.[0-9]+)+$ ]] || die "invalid version in service-image filename: $name"
+    printf '%s' "$name"
+}
+
+check_image_identity() {
+    local image=$1
+    local record_name=$2
+    local -n record=$record_name
+    local filename_version
+
+    filename_version=$(version_from_path "$image")
+    [[ ${record[IMAGE_VERSION]} == "$filename_version" ]] ||
+        die "embedded image version ${record[IMAGE_VERSION]} does not match $filename_version"
+}
+
+check_host_compatibility() {
+    local record_name=$1
+    local -n record=$record_name
+    local abi
+
+    for abi in "${host_abi[HOST_ABI_CURRENT]}" "${host_abi[HOST_ABI_ROLLBACK]}"; do
+        ((abi >= record[HOST_ABI_MIN] && abi <= record[HOST_ABI_MAX])) ||
+            die "service image does not support required host ABI $abi"
+    done
+}
+
+rollback_list_contains() {
+    local list=$1
+    local wanted=$2
+    local entry
+    local entries=()
+
+    IFS=: read -r -a entries <<<"$list"
+    for entry in "${entries[@]}"; do
+        [[ $entry == "$wanted" ]] && return 0
+    done
+    return 1
+}
+
+check_candidate_compatibility() {
+    local current_name=$1
+    local candidate_name=$2
+    local automatic=$3
+    local -n current=$current_name
+    local -n candidate=$candidate_name
+    local current_series candidate_series
+
+    systemd-analyze compare-versions "${candidate[IMAGE_VERSION]}" gt "${current[IMAGE_VERSION]}" ||
+        die 'candidate is not newer than the selected service image'
+
+    current_series=${current[STALWART_VERSION]%.*}
+    candidate_series=${candidate[STALWART_VERSION]%.*}
+    [[ $candidate_series == "$current_series" ]] ||
+        die 'minor/major Stalwart updates require a database-aware migration path'
+    [[ ${candidate[DATABASE_MIGRATION]} == none ]] ||
+        die 'database-migrating Stalwart updates require a database-aware migration path'
+    [[ ${candidate[DATABASE_FORMAT]} == "${current[DATABASE_FORMAT]}" ]] ||
+        die 'candidate changes the database format'
+    [[ ${candidate[DATABASE_SCHEMA]} == "${current[DATABASE_SCHEMA]}" ]] ||
+        die 'candidate changes the database schema'
+    rollback_list_contains "${candidate[ROLLBACK_COMPATIBLE_FROM]}" "${current[IMAGE_VERSION]}" ||
+        die 'candidate does not explicitly permit rollback to the selected image'
+
+    if [[ $automatic == yes ]]; then
+        [[ ${candidate[AUTOMATIC_UPDATE]} == yes ]] ||
+            die 'candidate is not approved for automatic activation'
+        [[ ${candidate[UPDATE_KIND]} == patch ]] ||
+            die 'only explicitly compatible patch images may activate automatically'
+    fi
+}
+
+resolve_link() {
+    local link=$1
+    local target
+
+    [[ -L $state_dir/$link ]] || return 1
+    target=$(readlink "$state_dir/$link")
+    [[ $target == images/"$image_prefix"*"$image_suffix" && $target != *'/'*'/'* ]] ||
+        die "unsafe $link service-image link: $target"
+    [[ -f $state_dir/$target && ! -L $state_dir/$target ]] ||
+        die "$link service-image target is missing: $target"
+    printf '%s' "$state_dir/$target"
+}
+
+resolve_optional_link() {
+    local link=$1
+    local output_name=$2
+    local -n resolved=$output_name
+
+    resolved=
+    [[ -e $state_dir/$link || -L $state_dir/$link ]] || return 0
+    # Assigning through this nameref is the function's API.
+    # shellcheck disable=SC2034
+    resolved=$(resolve_link "$link")
+}
+
+relative_target() {
+    local image=$1
+    [[ ${image%/*} == "$images_dir" ]] || die "image is outside the managed directory: $image"
+    printf 'images/%s' "${image##*/}"
+}
+
+atomic_link() {
+    local link=$1
+    local target=$2
+    local temporary=$state_dir/.${link}.$$
+
+    rm -f -- "$temporary"
+    ln -s -- "$target" "$temporary"
+    mv -Tf -- "$temporary" "$state_dir/$link"
+    sync -d "$state_dir"
+}
+
+remove_link() {
+    local link=$1
+    rm -f -- "$state_dir/$link"
+    sync -d "$state_dir"
+}
+
+cleanup_images() {
+    local current_target previous_target blocked_target image target keep
+    resolve_optional_link current.raw current_target
+    resolve_optional_link previous.raw previous_target
+    resolve_optional_link blocked.raw blocked_target
+
+    shopt -s nullglob
+    for image in "$images_dir"/"$image_prefix"*"$image_suffix"; do
+        keep=no
+        for target in "$current_target" "$previous_target" "$blocked_target"; do
+            [[ -n $target && $image == "$target" ]] && keep=yes
+        done
+        [[ $keep == yes ]] || rm -f -- "$image"
+    done
+    sync -d "$images_dir"
+}
+
+select_seed() {
+    local seeds=()
+    shopt -s nullglob
+    seeds=("$seed_dir"/"$image_prefix"*"$image_suffix")
+    ((${#seeds[@]} == 1)) || die 'the OS must contain exactly one signed Stalwart seed image'
+    printf '%s' "${seeds[0]}"
+}
+
+initialize_image() {
+    local current seed destination temporary
+    declare -A release=()
+
+    mkdir -p "$images_dir"
+    resolve_optional_link current.raw current
+    if [[ -n $current ]]; then
+        inspect_image "$current" release
+        check_image_identity "$current" release
+        check_host_compatibility release
+        cleanup_images
+        return
+    fi
+
+    seed=$(select_seed)
+    inspect_image "$seed" release
+    check_image_identity "$seed" release
+    check_host_compatibility release
+    [[ ${release[UPDATE_KIND]} == seed ]] || die 'initial application image is not marked as a seed'
+
+    destination=$images_dir/${seed##*/}
+    temporary=$images_dir/.${seed##*/}.$$
+    cp --reflink=auto --sparse=always -- "$seed" "$temporary"
+    chown root:root "$temporary"
+    chmod 0444 "$temporary"
+    mv -T -- "$temporary" "$destination"
+    /usr/sbin/restorecon -F "$destination"
+    sync -d "$destination"
+    sync -d "$images_dir"
+    atomic_link current.raw "$(relative_target "$destination")"
+    cleanup_images
+}
+
+restore_previous_link() {
+    local old_previous=$1
+    if [[ -n $old_previous ]]; then
+        atomic_link previous.raw "$(relative_target "$old_previous")"
+    else
+        remove_link previous.raw
+    fi
+}
+
+activate_image() {
+    local candidate=$1
+    local automatic=$2
+    local current old_previous='' compatibility_error
+    declare -A current_release=()
+    declare -A candidate_release=()
+
+    current=$(resolve_link current.raw) || die 'no selected Stalwart image exists'
+    [[ $candidate != "$current" ]] || return
+    inspect_image "$current" current_release
+    check_image_identity "$current" current_release
+    inspect_image "$candidate" candidate_release
+    check_image_identity "$candidate" candidate_release
+    check_host_compatibility candidate_release
+
+    if ! compatibility_error=$(check_candidate_compatibility \
+            current_release candidate_release "$automatic" 2>&1); then
+        printf 'Rejected Stalwart service image: %s\n' "$compatibility_error" >&2
+        atomic_link blocked.raw "$(relative_target "$candidate")"
+        cleanup_images
+        return 1
+    fi
+
+    resolve_optional_link previous.raw old_previous
+    atomic_link previous.raw "$(relative_target "$current")"
+    atomic_link current.raw "$(relative_target "$candidate")"
+
+    if systemctl restart stalwart.service &&
+            systemctl restart particleos-mailserver-health.service; then
+        remove_link blocked.raw
+        cleanup_images
+        printf 'Activated Stalwart service image %s\n' "${candidate_release[IMAGE_VERSION]}"
+        return
+    fi
+
+    printf 'Stalwart candidate failed service health; restoring %s\n' \
+        "${current_release[IMAGE_VERSION]}" >&2
+    atomic_link current.raw "$(relative_target "$current")"
+    restore_previous_link "$old_previous"
+    atomic_link blocked.raw "$(relative_target "$candidate")"
+    systemctl restart stalwart.service || die 'failed to restart the retained Stalwart image'
+    systemctl restart particleos-mailserver-health.service ||
+        die 'retained Stalwart image failed health after rollback'
+    cleanup_images
+    return 1
+}
+
+update_image() {
+    local current blocked candidate='' current_version image_version
+    local images=()
+    local image
+
+    systemd-sysupdate --component=stalwart update
+    current=$(resolve_link current.raw) || die 'no selected Stalwart image exists after update'
+    current_version=$(version_from_path "$current")
+    resolve_optional_link blocked.raw blocked
+
+    shopt -s nullglob
+    images=("$images_dir"/"$image_prefix"*"$image_suffix")
+    ((${#images[@]} > 0)) || die 'sysupdate installed no Stalwart images'
+    while IFS= read -r image; do
+        image_version=$(version_from_path "$image")
+        if systemd-analyze compare-versions "$image_version" gt "$current_version"; then
+            candidate=$image
+        fi
+    done < <(printf '%s\n' "${images[@]}" | sort -V)
+    [[ -n $candidate ]] || return
+    [[ -n $blocked && $candidate == "$blocked" ]] && return
+    activate_image "$candidate" yes
+}
+
+manual_activate() {
+    local version=$1
+    [[ $version =~ ^[0-9]+(\.[0-9]+)+$ ]] || die 'invalid service-image version'
+    local candidate=$images_dir/$image_prefix$version$image_suffix
+    [[ -f $candidate ]] || die "service image is not installed: $version"
+    activate_image "$candidate" no
+}
+
+rollback_image() {
+    local current previous
+    declare -A current_release=()
+    declare -A previous_release=()
+
+    current=$(resolve_link current.raw) || die 'no selected Stalwart image exists'
+    previous=$(resolve_link previous.raw) || die 'no retained previous Stalwart image exists'
+    inspect_image "$current" current_release
+    check_image_identity "$current" current_release
+    inspect_image "$previous" previous_release
+    check_image_identity "$previous" previous_release
+    check_host_compatibility previous_release
+    [[ ${current_release[DATABASE_MIGRATION]} == none ]] ||
+        die 'the selected image migrated the database; automatic rollback is forbidden'
+    [[ ${current_release[DATABASE_FORMAT]} == "${previous_release[DATABASE_FORMAT]}" &&
+            ${current_release[DATABASE_SCHEMA]} == "${previous_release[DATABASE_SCHEMA]}" ]] ||
+        die 'the retained image is not database-compatible'
+    rollback_list_contains "${current_release[ROLLBACK_COMPATIBLE_FROM]}" \
+        "${previous_release[IMAGE_VERSION]}" ||
+        die 'the selected image does not authorize rollback to the retained image'
+
+    atomic_link current.raw "$(relative_target "$previous")"
+    atomic_link previous.raw "$(relative_target "$current")"
+    if systemctl restart stalwart.service &&
+            systemctl restart particleos-mailserver-health.service; then
+        cleanup_images
+        printf 'Rolled back Stalwart to service image %s\n' \
+            "${previous_release[IMAGE_VERSION]}"
+        return
+    fi
+
+    atomic_link current.raw "$(relative_target "$current")"
+    atomic_link previous.raw "$(relative_target "$previous")"
+    systemctl restart stalwart.service || true
+    die 'retained service image failed health; restored the original selection'
+}
+
+usage() {
+    printf '%s\n' \
+        'Usage: image-manager initialize' \
+        '       image-manager update' \
+        '       image-manager activate VERSION' \
+        '       image-manager rollback' >&2
+    exit 2
+}
+
+(($# >= 1)) || usage
+load_host_abi
+exec 9>"$state_dir/image-manager.lock"
+flock 9
+
+case $1 in
+    initialize)
+        (($# == 1)) || usage
+        initialize_image
+        ;;
+    update)
+        (($# == 1)) || usage
+        update_image
+        ;;
+    activate)
+        (($# == 2)) || usage
+        manual_activate "$2"
+        ;;
+    rollback)
+        (($# == 1)) || usage
+        rollback_image
+        ;;
+    *)
+        usage
+        ;;
+esac

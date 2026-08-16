@@ -252,7 +252,7 @@ if [[ $mode == recovery ]]; then
     for address in 127.0.0.1 ::1; do
         wait_for_listener "$address" 8080
         webui_check http "$address" 8080 admin \
-            /usr/share/stalwart/webui-admin.sha256
+            /run/stalwart/webui-admin.sha256
         for port in 25 443 465 993; do
             if tcp_connect "$address" "$port" 2>/dev/null; then
                 fail "$PROTOCOL_FAILURE" \
@@ -272,7 +272,7 @@ else
         smtp_tls_check "$address"
         imap_tls_check "$address"
         webui_check https "$address" 443 account \
-            /usr/share/stalwart/webui-account.sha256
+            /run/stalwart/webui-account.sha256
     done
 fi
 

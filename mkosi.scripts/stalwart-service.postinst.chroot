@@ -1,0 +1,23 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+
+test "$(id -u stalwart)" = 993
+test "$(id -g stalwart)" = 993
+test -x /usr/bin/stalwart
+test -r /usr/share/stalwart/webui.zip
+test -r /usr/lib/particleos/stalwart/release
+test -r /usr/lib64/libhardened_malloc.so
+test -r /usr/lib64/libno_rlimit_as.so
+
+# The service image needs the executable and application content labels, while
+# the host loads the same policy module before PID 1 mounts this DDI.
+semodule -X 300 -i /usr/share/selinux/packages/particleos_stalwart.pp
+
+# RootImage= supplies an otherwise private /run. These are immutable mount
+# targets for the narrowly selected host state and Unix sockets.
+install -d -m 0755 /etc/stalwart /run/postgresql /run/stalwart
+install -d -m 0700 /var/lib/stalwart /var/log/stalwart
+
+grep -Fqx 'IMAGE_ID=ParticleOS-Stalwart' /usr/lib/particleos/stalwart/release
+grep -Fqx "IMAGE_VERSION=$IMAGE_VERSION" /usr/lib/particleos/stalwart/release

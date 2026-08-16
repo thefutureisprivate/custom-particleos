@@ -1,0 +1,8 @@
+<package name="stalwart-image" project="home:thefutureisprivate">
+  <title>ParticleOS Stalwart service image</title>
+  <description>Signed dm-verity Stalwart systemd RootImage built from the custom RPM.</description>
+  <build>
+    <disable/>
+    <enable repository="stalwart_images" arch="x86_64"/>
+  </build>
+</package>

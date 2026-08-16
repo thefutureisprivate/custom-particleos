@@ -426,7 +426,16 @@ patterns derive from `%M`, so the current image can consume only its
 matching `ParticleOS-Webserver` or `ParticleOS-Mailserver` update namespace.
 The DNS namespace remains reserved and unpublished.
 
-Updates are fully unattended. `systemd-sysupdate-update.timer` periodically
+Stalwart itself has an independent application-image lifecycle. The host OS
+contains only its fixed UID/GID, systemd unit, configuration, SELinux policy,
+PostgreSQL integration, and image selector. The executable, allocator, and
+WebUI live in a signed EROFS `RootImage=` DDI with embedded dm-verity metadata.
+The selected image and retained previous image live on the encrypted persistent
+root, so an OS A/B rollback continues with the same selected Stalwart release.
+See `IMAGE-UPDATES.md` in the mailserver image for the signed host/database ABI
+contract and explicit patch-only automatic activation rules.
+
+OS updates are fully unattended. `systemd-sysupdate-update.timer` periodically
 stages a complete signed version. PID 1 publishes only that service's dynamic
 cgroup ID into nftables; its new TCP/443 connections are rate limited, and
 generic root processes receive no corresponding egress. The separate
@@ -447,7 +456,9 @@ Stalwart's post-migration mode, and the local systemd-resolved interface without
 depending on Internet availability. It then performs bounded local protocol
 checks: the recovery WebUI while unprovisioned, or SMTP/SMTPS/IMAPS/HTTPS, TLS
 certificates, security headers, and the exact packaged WebUI in normal mode. A
-failed gate is not blessed and reboots the counted slot.
+failed gate is not blessed and reboots the counted slot. The same gate also
+runs after independent Stalwart-image activation; application failure restores
+the retained image without changing the OS slot.
 After three failed attempts, systemd-boot selects the previous blessed UKI and
 A/B `/usr` set. The forced-reboot action is conditional on the
 `LoaderBootCountPath` EFI variable, so an already blessed normal boot cannot

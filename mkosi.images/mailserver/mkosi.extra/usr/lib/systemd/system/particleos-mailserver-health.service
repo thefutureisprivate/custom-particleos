@@ -4,11 +4,9 @@
 Description=Verify the ParticleOS mailserver before blessing this boot
 Documentation=man:systemd-bless-boot.service(8)
 Documentation=file:/usr/share/doc/particleos/stalwart/README
-ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
 Requires=systemd-resolved.service postgresql.service particleos-stalwart-database.service stalwart.service
 After=systemd-resolved.service postgresql.service particleos-stalwart-database.service stalwart.service
-Before=boot-complete.target
-FailureAction=reboot
+Before=systemd-boot-check-no-failures.service boot-complete.target
 
 [Service]
 Type=oneshot

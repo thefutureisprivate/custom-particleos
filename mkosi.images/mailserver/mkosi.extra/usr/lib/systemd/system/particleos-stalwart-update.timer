@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Check for compatible Stalwart service-image patch updates
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=6h
+FixedRandomDelay=yes
+Persistent=yes
+
+[Install]
+WantedBy=timers.target

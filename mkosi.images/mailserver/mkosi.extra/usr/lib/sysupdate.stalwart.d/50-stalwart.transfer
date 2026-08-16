@@ -1,0 +1,15 @@
+[Transfer]
+Verify=yes
+
+[Source]
+Type=url-file
+Path=https://download.opensuse.org/repositories/home:/thefutureisprivate/stalwart_images/
+MatchPattern=ParticleOS-Stalwart_@v_@a.raw.zst
+
+[Target]
+Type=regular-file
+Path=/var/lib/particleos/stalwart/images
+MatchPattern=ParticleOS-Stalwart_@v_@a.raw
+Mode=0444
+ReadOnly=yes
+InstancesMax=4

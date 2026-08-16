@@ -5,5 +5,7 @@
 # checks but remains absent from the public nftables policy.
 enable postgresql.service
 enable particleos-stalwart-database.service
+enable particleos-stalwart-image-setup.service
 enable stalwart.service
 enable particleos-mailserver-health.service
+enable particleos-stalwart-update.timer

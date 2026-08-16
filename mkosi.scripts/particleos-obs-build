@@ -3,8 +3,8 @@
 set -euo pipefail
 
 # Keep the upstream signing implementation authoritative, then add aggregate
-# metadata which its single-IMAGE_ID collector otherwise omits. Signable role
-# artifacts are still handled exclusively by the upstream implementation.
+# metadata which its single-IMAGE_ID collector otherwise omits. Signable OS
+# roles and application DDIs are still handled exclusively by upstream.
 mkosi_obs_build="$('/usr/bin/python3' -c '
 from pathlib import Path
 import mkosi.resources
@@ -30,17 +30,15 @@ trap cleanup_signing_workdir EXIT
 
 # systemd-repart expands %M and %A from the build host during mkosi-obs's
 # deferred signing pass, not from the --root= os-release supplied by the
-# upstream helper. The first role in an aggregate therefore otherwise receives
-# the generic usr-verity-sig label and is rejected by systemd.image_filter at
-# boot. Materialize the role-specific label in each saved repart definition
-# before handing the artifacts to the authoritative upstream signer.
+# upstream helper. Materialize the image-specific label for either an OS usr
+# partition or an application root partition before invoking that signer.
 read_os_release_value() {
     local file=$1
     local key=$2
     local line value
 
     line="$(grep -m1 "^${key}=" "$file")" || {
-        echo "Missing $key in role OS release metadata: $file" >&2
+        echo "Missing $key in image OS release metadata: $file" >&2
         return 1
     }
     value=${line#*=}
@@ -55,54 +53,67 @@ read_os_release_value() {
 }
 
 materialize_repart_label() {
-    local role_prefix=$1
+    local image_prefix=$1
     local staged_sources_dir=$2
-    local osrelease="$role_prefix.osrelease"
-    local repart_tar="$role_prefix.repart.tar"
+    local osrelease="$image_prefix.osrelease"
+    local repart_tar="$image_prefix.repart.tar"
     local staged_repart_tar="$staged_sources_dir/${repart_tar##*/}"
     local image_id image_version label workdir definition rewritten_tar
+    local definitions=()
 
     [[ -f $osrelease ]] || {
-        echo "Missing role OS release metadata: $osrelease" >&2
+        echo "Missing image OS release metadata: $osrelease" >&2
         return 1
     }
     [[ -f $repart_tar ]] || {
-        echo "Missing role repart definitions: $repart_tar" >&2
+        echo "Missing image repart definitions: $repart_tar" >&2
         return 1
     }
 
     image_id="$(read_os_release_value "$osrelease" IMAGE_ID)"
     image_version="$(read_os_release_value "$osrelease" IMAGE_VERSION)"
     if [[ ! $image_id =~ ^[A-Za-z0-9._-]+$ || ! $image_version =~ ^[A-Za-z0-9._-]+$ ]]; then
-        echo "Unsafe role identity in $osrelease: $image_id $image_version" >&2
+        echo "Unsafe image identity in $osrelease: $image_id $image_version" >&2
         return 1
     fi
 
     label="${image_id}_${image_version}_vsig"
     if ((${#label} > 36)); then
-        echo "Role verity-signature GPT label exceeds 36 characters: $label" >&2
+        echo "Image verity-signature GPT label exceeds 36 characters: $label" >&2
         return 1
     fi
 
     workdir="$(mktemp -d "$signing_workdir/repart.XXXXXX")"
     tar -xf "$repart_tar" -C "$workdir"
-    definition="$workdir/10-usr-verity-sig.conf"
-    if [[ ! -f $definition ]] || ! grep -qx 'Type=usr-verity-sig' "$definition"; then
-        echo "Saved repart definitions lack usr-verity-sig: $repart_tar" >&2
+    definitions=("$workdir"/*-verity-sig.conf)
+    if ((${#definitions[@]} != 1)); then
+        echo "Saved repart definitions must contain exactly one verity signature partition: $repart_tar" >&2
+        return 1
+    fi
+    definition=${definitions[0]}
+    if ! grep -Eqx 'Type=(usr|root)-verity-sig' "$definition"; then
+        echo "Unsupported verity signature partition in $repart_tar: $definition" >&2
         return 1
     fi
 
     sed -i "s/^Label=.*$/Label=$label/" "$definition"
     grep -qxF "Label=$label" "$definition" || {
-        echo "Failed to materialize role GPT label in $repart_tar" >&2
+        echo "Failed to materialize image GPT label in $repart_tar" >&2
         return 1
     }
 
     rewritten_tar="$workdir/repart.tar"
+    mapfile -t definitions < <(
+        find "$workdir" -maxdepth 1 -type f -name '*.conf' -printf '%f\n' |
+            sort
+    )
+    if ((${#definitions[@]} < 3)); then
+        echo "Incomplete saved repart definitions: $repart_tar" >&2
+        return 1
+    fi
     tar --sort=name --mtime="@${SOURCE_DATE_EPOCH:-0}" \
         --owner=0 --group=0 --numeric-owner \
-        -cf "$rewritten_tar" -C "$workdir" \
-        00-esp.conf 10-usr-verity-sig.conf 11-usr-verity.conf 12-usr.conf
+        -cf "$rewritten_tar" -C "$workdir" "${definitions[@]}"
     # Replace only the symlink in the writable source view. OBS mounts the
     # original SOURCES directory read-only during this pass.
     rm -- "$staged_repart_tar"
@@ -111,9 +122,9 @@ materialize_repart_label() {
 }
 
 shopt -s nullglob
-role_roothashes=("$obs_sources_dir"/ParticleOS-*.roothash)
-if ((${#role_roothashes[@]} == 0)); then
-    echo "No ParticleOS role roothashes were supplied to the signing pass" >&2
+image_roothashes=("$obs_sources_dir"/ParticleOS-*.roothash)
+if ((${#image_roothashes[@]} == 0)); then
+    echo "No ParticleOS image roothashes were supplied to the signing pass" >&2
     exit 1
 fi
 
@@ -133,7 +144,7 @@ if [[ -f $obs_sources_dir/hashes.cpio.rsasign.sig ]]; then
         ln -s -- "$source" "$staged_sources_dir/${source##*/}"
     done
 
-    for roothash in "${role_roothashes[@]}"; do
+    for roothash in "${image_roothashes[@]}"; do
         materialize_repart_label "${roothash%.roothash}" "$staged_sources_dir"
     done
 
@@ -172,7 +183,13 @@ copy_release_metadata() {
     cp --reflink=auto -- "$source" "$obs_output_dir/"
 }
 
-copy_release_metadata "$release_sources_dir/base.manifest.gz"
+if [[ -f $release_sources_dir/base.manifest.gz ]]; then
+    copy_release_metadata "$release_sources_dir/base.manifest.gz"
+elif compgen -G "$release_sources_dir/ParticleOS-Webserver_*.roothash" >/dev/null ||
+        compgen -G "$release_sources_dir/ParticleOS-Mailserver_*.roothash" >/dev/null; then
+    echo 'Required aggregate base manifest is missing' >&2
+    exit 1
+fi
 
 # A non-installing aggregate can emit multiple complete roles. Upstream copies
 # metadata only for mkosi's final IMAGE_ID, although it correctly signs every
@@ -180,10 +197,10 @@ copy_release_metadata "$release_sources_dir/base.manifest.gz"
 # roothashes that entered that signing pass and require its complete update and
 # audit metadata. Do not republish the bare roothash itself: upstream removes
 # it deliberately so importctl cannot misidentify it as the raw disk's hash.
-for roothash in "${role_roothashes[@]}"; do
-    role_prefix=${roothash%.roothash}
-    role_basename=${role_prefix##*/}
-    copy_release_metadata "$release_sources_dir/$role_basename.manifest.gz"
-    copy_release_metadata "$release_sources_dir/$role_basename.osrelease"
-    copy_release_metadata "$release_sources_dir/$role_basename.repart.tar"
+for roothash in "${image_roothashes[@]}"; do
+    image_prefix=${roothash%.roothash}
+    image_basename=${image_prefix##*/}
+    copy_release_metadata "$release_sources_dir/$image_basename.manifest.gz"
+    copy_release_metadata "$release_sources_dir/$image_basename.osrelease"
+    copy_release_metadata "$release_sources_dir/$image_basename.repart.tar"
 done

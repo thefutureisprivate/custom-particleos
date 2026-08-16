@@ -1,0 +1,11 @@
+<services>
+  <!-- Install this as _service and pin the reviewed application-image commit. -->
+  <service name="obs_scm">
+    <param name="scm">git</param>
+    <param name="url">https://github.com/thefutureisprivate/custom-particleos.git</param>
+    <param name="revision">REPLACE_WITH_REVIEWED_COMMIT</param>
+    <param name="extract">.obs/stalwart-image/x86-64/mkosi.conf</param>
+    <param name="extract">.obs/stalwart-image/x86-64/stalwart-image.build</param>
+    <param name="without-version">1</param>
+  </service>
+</services>
