@@ -612,6 +612,12 @@ require_fixed "^ssh-ed25519" "$admin_firstboot"
 require_fixed 'base64 --decode' "$admin_firstboot"
 require_fixed '0000000b7373682d6564323535313900000020' "$admin_firstboot"
 require_fixed 'ssh-keygen -l -f "/home/$username/.ssh/authorized_keys"' "$admin_firstboot"
+require_fixed '(allow .useradd_t .systemd_userdbd_runtime_t (sock_file (read)))' \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
+require_fixed '(allow .passwd_t .init_t (fifo_file (read)))' \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
+require_fixed '(allow .init_t .init_t (passwd (passwd)))' \
+    mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
 require_fixed "--no-log-init" "$admin_firstboot"
 require_fixed "--no-create-home" "$admin_firstboot"
 require_fixed "--user-group" "$admin_firstboot"
@@ -624,6 +630,8 @@ require_fixed "--mode=0700" "$admin_firstboot"
 require_fixed "--mode=0600" "$admin_firstboot"
 require_fixed 'restorecon -RF "/home/$username"' "$admin_firstboot"
 require_fixed 'userdel --remove -- "$username"' "$admin_firstboot"
+require_fixed 'groupdel -- "$username"' "$admin_firstboot"
+require_fixed 'getent group "$stale_username"' "$admin_firstboot"
 require_fixed 'mv --force --no-target-directory "$pending" "$marker"' "$admin_firstboot"
 require_fixed "ConditionPathExists=!/var/lib/particleos/admin-provisioned" "$admin_firstboot_unit"
 require_fixed "Before=getty-pre.target sshd.socket systemd-user-sessions.service multi-user.target" \

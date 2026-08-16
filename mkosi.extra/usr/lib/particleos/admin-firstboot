@@ -15,6 +15,7 @@ authorized_key=
 key_file=
 key_blob_file=
 account_created=0
+group_cleanup_required=0
 
 valid_username() {
     [[ $1 =~ ^[a-z][a-z0-9_-]{0,30}$ ]]
@@ -54,6 +55,9 @@ cleanup() {
         if ((account_created != 0)); then
             userdel --remove -- "$username" || true
         fi
+        if ((group_cleanup_required != 0)); then
+            groupdel -- "$username" || true
+        fi
         rm --force -- "$pending"
     fi
 
@@ -82,6 +86,12 @@ if [[ -f $pending ]]; then
             userdel --remove -- "$stale_username" || true
         fi
     fi
+    if valid_username "$stale_username" && getent group "$stale_username" >/dev/null; then
+        stale_gid=$(getent group "$stale_username" | cut --delimiter=: --fields=3)
+        if ((stale_gid >= 1000 && stale_gid <= 60000)); then
+            groupdel -- "$stale_username" || true
+        fi
+    fi
     rm --force -- "$pending"
 fi
 
@@ -95,8 +105,8 @@ while true; do
         echo "Use 1-31 lowercase letters, digits, underscores, or hyphens; start with a letter." >&2
         continue
     fi
-    if getent passwd "$username" >/dev/null; then
-        echo "That account already exists." >&2
+    if getent passwd "$username" >/dev/null || getent group "$username" >/dev/null; then
+        echo "That account or group already exists." >&2
         continue
     fi
     break
@@ -140,6 +150,7 @@ while true; do
 done
 
 (umask 077; printf '%s\n' "$username" >"$pending")
+group_cleanup_required=1
 useradd \
     --no-log-init \
     --no-create-home \
@@ -172,6 +183,7 @@ printf 'Installing SSH key: %s\n' "$key_fingerprint"
 mv --force --no-target-directory "$pending" "$marker"
 chmod 0600 "$marker"
 account_created=0
+group_cleanup_required=0
 
 printf '\nAdministrator %s is ready. SSH key fingerprint: %s\n' \
     "$username" "$key_fingerprint"

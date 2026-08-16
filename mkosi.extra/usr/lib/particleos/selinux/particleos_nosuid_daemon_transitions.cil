@@ -43,9 +43,16 @@
   (allow .init_t .passwd_t (process (transition)))
   (typetransition .init_t .passwd_exec_t process .passwd_t)
   (allow .init_t .passwd_t (process2 (nosuid_transition)))
+  (allow .passwd_t .init_t (fifo_file (read)))
+  (allow .init_t .init_t (passwd (passwd)))
   (allow .init_t .ssh_keygen_t (process2 (nosuid_transition)))
   (allow .init_t .setfiles_t (process2 (nosuid_transition)))
   (allow .useradd_t .setfiles_t (process2 (nosuid_transition)))
+
+  ; shadow-utils consults nss-systemd before creating the local account. Let
+  ; its confined useradd_t domain inspect only the userdb multiplexer socket;
+  ; connection and message permissions remain governed by Fedora policy.
+  (allow .useradd_t .systemd_userdbd_runtime_t (sock_file (read)))
 
   ; Console login starts the per-user manager and enters the Fedora user
   ; domain. OpenSSH additionally re-executes through sshd_session_t. Fedora
