@@ -53,8 +53,11 @@ declare -A role_packages=(
 )
 base_config=mkosi.images/base/mkosi.conf
 initrd_config=mkosi.images/initrd/mkosi.conf
+stalwart_common_config=mkosi.images/stalwart-common.conf
 stalwart_service_config=mkosi.images/stalwart-service/mkosi.conf
 stalwart_service_release=mkosi.images/stalwart-service/mkosi.extra/usr/lib/particleos/stalwart/release
+stalwart_built_seed_config=mkosi.images/stalwart-seed/mkosi.conf
+stalwart_built_seed_release=mkosi.images/stalwart-seed/mkosi.extra/usr/lib/particleos/stalwart/release
 stalwart_seed_release=mkosi.resources/stalwart-seed/release
 stalwart_seed_installer=mkosi.scripts/particleos.install-stalwart-seed
 role_policy=mkosi.role.conf
@@ -65,15 +68,17 @@ obs_postoutput=mkosi.scripts/particleos-obs-postoutput
 obs_build=mkosi.scripts/particleos-obs-build
 obs_recipe=.obs/fedora/x86-64/mkosi.conf
 stalwart_obs_recipe=.obs/stalwart-image/x86-64/mkosi.conf
+stalwart_seed_obs_recipe=.obs/stalwart-seed/x86-64/mkosi.conf
 service_template=.obs/fedora/x86-64/_service.example
 stalwart_service_template=.obs/stalwart-image/x86-64/_service.example
+stalwart_seed_template=.obs/stalwart-seed/x86-64/_service.example
 project_cert_installer=mkosi.scripts/particleos.install-project-cert
 postinst=mkosi.scripts/particleos.postinst.chroot
 finalize=mkosi.scripts/particleos.finalize
 hostname_apply=mkosi.extra/usr/lib/particleos/apply-hostname
 hostname_unit=mkosi.extra/usr/lib/systemd/system/particleos-hostname.service
 base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
-obs_recipes=("$obs_recipe" "$stalwart_obs_recipe")
+obs_recipes=("$obs_recipe" "$stalwart_obs_recipe" "$stalwart_seed_obs_recipe")
 
 require_fixed "Dependencies=webserver,mailserver" mkosi.conf
 reject_fixed "Dependencies=dnsserver" mkosi.conf
@@ -91,6 +96,11 @@ stalwart_selector=mkosi.conf.d/90-stalwart-image.conf
 require_fixed "PathExists=/usr/src/packages/SOURCES/stalwart-image.build" "$stalwart_selector"
 require_fixed "Dependencies=" "$stalwart_selector"
 require_fixed "Dependencies=stalwart-service" "$stalwart_selector"
+stalwart_seed_selector=mkosi.conf.d/91-stalwart-seed.conf
+require_fixed "PathExists=/usr/src/packages/SOURCES/stalwart-seed.build" \
+    "$stalwart_seed_selector"
+require_fixed "Dependencies=" "$stalwart_seed_selector"
+require_fixed "Dependencies=stalwart-seed" "$stalwart_seed_selector"
 
 require_fixed "Format=directory" "$base_config"
 require_fixed "Output=base" "$base_config"
@@ -228,18 +238,29 @@ require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" "$se
 require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$service_template"
 require_fixed ".obs/fedora/x86-64/mkosi.conf" "$service_template"
 xmllint --noout "$stalwart_service_template"
+xmllint --noout "$stalwart_seed_template"
 xmllint --noout .obs/stalwart-image-meta.example.xml
 xmllint --noout .obs/stalwart-image-updates-meta.example.xml
 require_fixed "# needssslcertforbuild" "$stalwart_obs_recipe"
 require_fixed "Dependencies=stalwart-service" "$stalwart_obs_recipe"
 require_fixed "stalwart-particleos-user" "$stalwart_obs_recipe"
 require_fixed "stalwart-selinux" "$stalwart_obs_recipe"
+require_fixed "# needssslcertforbuild" "$stalwart_seed_obs_recipe"
+require_fixed "Dependencies=stalwart-seed" "$stalwart_seed_obs_recipe"
+require_fixed "stalwart-particleos-user" "$stalwart_seed_obs_recipe"
+require_fixed "stalwart-selinux" "$stalwart_seed_obs_recipe"
 require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" \
     "$stalwart_service_template"
 require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$stalwart_service_template"
 require_fixed ".obs/stalwart-image/x86-64/mkosi.conf" "$stalwart_service_template"
 require_fixed ".obs/stalwart-image/x86-64/stalwart-image.build" \
     "$stalwart_service_template"
+require_fixed "https://github.com/thefutureisprivate/custom-particleos.git" \
+    "$stalwart_seed_template"
+require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$stalwart_seed_template"
+require_fixed ".obs/stalwart-seed/x86-64/mkosi.conf" "$stalwart_seed_template"
+require_fixed ".obs/stalwart-seed/x86-64/stalwart-seed.build" \
+    "$stalwart_seed_template"
 require_fixed '<enable repository="stalwart_seed_images"/>' \
     .obs/stalwart-image-meta.example.xml
 require_fixed '<enable repository="stalwart_images"/>' \
@@ -258,31 +279,37 @@ fi
 require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
 
-require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
-require_fixed "ImageVersion=0.16.17.22" "$stalwart_service_config"
-require_fixed "Format=disk" "$stalwart_service_config"
-require_fixed "Bootable=no" "$stalwart_service_config"
-require_fixed "ElTorito=no" "$stalwart_service_config"
-require_fixed "SELinuxRelabel=yes" "$stalwart_service_config"
+require_fixed "Include=%D/mkosi.images/stalwart-common.conf" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.24" "$stalwart_service_config"
+require_fixed "Output=ParticleOS-Stalwart_%v_%a" "$stalwart_service_config"
+require_fixed "Include=%D/mkosi.images/stalwart-common.conf" "$stalwart_built_seed_config"
+require_fixed "ImageVersion=0.16.17.23" "$stalwart_built_seed_config"
+require_fixed "Output=ParticleOS-Stalwart_%v_%a" "$stalwart_built_seed_config"
+require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_common_config"
+require_fixed "Format=disk" "$stalwart_common_config"
+require_fixed "Bootable=no" "$stalwart_common_config"
+require_fixed "ElTorito=no" "$stalwart_common_config"
+require_fixed "SELinuxRelabel=yes" "$stalwart_common_config"
 require_fixed "RepartDirectories=%D/mkosi.images/stalwart-service/mkosi.repart" \
-    "$stalwart_service_config"
-require_fixed "Include=%D/mkosi.service.obs.conf" "$stalwart_service_config"
+    "$stalwart_common_config"
+require_fixed "Include=%D/mkosi.service.obs.conf" "$stalwart_common_config"
 for service_package in \
         hardened_malloc \
         no_rlimit_as \
         stalwart \
         stalwart-particleos-user \
         stalwart-selinux; do
-    require_fixed "$service_package" "$stalwart_service_config"
+    require_fixed "$service_package" "$stalwart_common_config"
     require_fixed "$service_package" "$stalwart_obs_recipe"
+    require_fixed "$service_package" "$stalwart_seed_obs_recipe"
 done
-reject_fixed "stalwart-particleos-host" "$stalwart_service_config"
+reject_fixed "stalwart-particleos-host" "$stalwart_common_config"
 require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$service_obs_config"
 require_fixed "CompressOutput=zstd" "$service_obs_config"
 require_fixed "Verity=defer" "$service_obs_config"
 require_fixed "PostOutputScripts=%D/$obs_postoutput" "$service_obs_config"
 require_fixed "PostOutputScripts=%D/mkosi.scripts/remove-first-pass-checksum" \
-    "$stalwart_service_config"
+    "$stalwart_common_config"
 for repart_definition in \
         mkosi.images/stalwart-service/mkosi.repart/10-root-verity-sig.conf \
         mkosi.images/stalwart-service/mkosi.repart/11-root-verity.conf \
@@ -307,13 +334,20 @@ for metadata_key in \
         DATABASE_FORMAT DATABASE_SCHEMA DATABASE_MIGRATION UPDATE_KIND \
         AUTOMATIC_UPDATE ROLLBACK_COMPATIBLE_FROM; do
     require_fixed "$metadata_key=" "$stalwart_service_release"
+    require_fixed "$metadata_key=" "$stalwart_built_seed_release"
 done
-require_fixed "STALWART_PACKAGE_RELEASE=21" "$stalwart_service_release"
-require_fixed "IMAGE_VERSION=0.16.17.22" "$stalwart_service_release"
+require_fixed "STALWART_PACKAGE_RELEASE=22" "$stalwart_service_release"
+require_fixed "IMAGE_VERSION=0.16.17.24" "$stalwart_service_release"
 require_fixed "UPDATE_KIND=patch" "$stalwart_service_release"
 require_fixed "AUTOMATIC_UPDATE=yes" "$stalwart_service_release"
-require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14:0.16.17.16:0.16.17.20" \
+require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14:0.16.17.16:0.16.17.20:0.16.17.22:0.16.17.23" \
     "$stalwart_service_release"
+require_fixed "STALWART_PACKAGE_RELEASE=22" "$stalwart_built_seed_release"
+require_fixed "IMAGE_VERSION=0.16.17.23" "$stalwart_built_seed_release"
+require_fixed "UPDATE_KIND=seed" "$stalwart_built_seed_release"
+require_fixed "AUTOMATIC_UPDATE=no" "$stalwart_built_seed_release"
+require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.23" \
+    "$stalwart_built_seed_release"
 require_fixed 'NAME="ParticleOS Stalwart Service Image"' \
     mkosi.scripts/stalwart-service.postinst.chroot
 require_fixed 'ID=particleos-stalwart' mkosi.scripts/stalwart-service.postinst.chroot

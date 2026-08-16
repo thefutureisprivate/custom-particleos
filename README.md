@@ -135,8 +135,8 @@ and its
    repositories, select the mkosi build type, and select the signed raw
    checksum repository format for both OS and Stalwart application images.
 
-3. Copy the [Stalwart-image `_service`
-   template](./.obs/stalwart-image/x86-64/_service.example) into the
+3. Copy the [Stalwart seed `_service`
+   template](./.obs/stalwart-seed/x86-64/_service.example) into the
    `stalwart-image` seed package, replace `REPLACE_WITH_REVIEWED_COMMIT` with
    the full reviewed commit ID, and wait for the signed DDI to publish. The
    seed repository uses OBS `rebuild="local"`: dependency changes cannot
@@ -144,6 +144,12 @@ and its
    changes still build normally.
    Independently verify its project signature, embedded dm-verity signature,
    release metadata, and compressed and raw SHA-256 digests.
+
+   The moving `stalwart-image-updates` package instead uses the
+   [application-image template](./.obs/stalwart-image/x86-64/_service.example).
+   Keeping two subimage definitions prevents a recovery seed from being
+   republished with `UPDATE_KIND=patch`, or an automatic update from being
+   mislabeled as a seed.
 
 4. Record those exact digests in
    [`mkosi.resources/stalwart-seed/release`](./mkosi.resources/stalwart-seed/release).
