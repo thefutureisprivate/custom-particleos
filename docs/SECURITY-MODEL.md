@@ -389,6 +389,9 @@ start. The connection sandbox is attached to Fedora's
 `sshd@.service` template, so every socket-activated session receives the
 capability, filesystem, namespace, and syscall restrictions; the disabled
 monolithic `sshd.service` is not used.
+The template can update only its runtime state, Fedora's login-accounting
+files under `/var/log`, and pam_lastlog2's database under `/var/lib/lastlog`;
+the rest of the system remains read-only to the service mount namespace.
 `NoNewPrivileges=yes` is excluded because OpenSSH 10.2 re-execs its session
 helper and SELinux must transition it from `sshd_t` to `sshd_session_t`.
 Initial public-key installation and firewall changes therefore require console

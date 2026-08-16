@@ -706,6 +706,7 @@ require_fixed "NoNewPrivileges=no" "$sshd_template_dropin"
 reject_fixed "NoNewPrivileges=yes" "$sshd_template_dropin"
 require_fixed "CapabilityBoundingSet=" "$sshd_template_dropin"
 require_fixed "ProtectSystem=strict" "$sshd_template_dropin"
+require_fixed "ReadWritePaths=/run /var/lib/lastlog /var/log" "$sshd_template_dropin"
 require_fixed "RestrictNamespaces=yes" "$sshd_template_dropin"
 sshd_socket_dropin=mkosi.extra/usr/lib/systemd/system/sshd.socket.d/40-particleos-firewall.conf
 require_fixed "DefaultDependencies=no" "$sshd_socket_dropin"
