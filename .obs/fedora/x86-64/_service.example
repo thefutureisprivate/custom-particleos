@@ -12,12 +12,12 @@
   <service name="download_url">
     <param name="protocol">https</param>
     <param name="host">download.opensuse.org</param>
-    <param name="path">/repositories/home:/thefutureisprivate/stalwart_seed_images/ParticleOS-Stalwart_0.16.17.14_x86-64.raw.zst</param>
-    <param name="filename">ParticleOS-Stalwart_0.16.17.14_x86-64.raw.zst</param>
+    <param name="path">/repositories/home:/thefutureisprivate/stalwart_seed_images/ParticleOS-Stalwart_0.16.17.23_x86-64.raw.zst</param>
+    <param name="filename">ParticleOS-Stalwart_0.16.17.23_x86-64.raw.zst</param>
   </service>
   <service name="verify_file">
-    <param name="file">_service:download_url:ParticleOS-Stalwart_0.16.17.14_x86-64.raw.zst</param>
+    <param name="file">_service:download_url:ParticleOS-Stalwart_0.16.17.23_x86-64.raw.zst</param>
     <param name="verifier">sha256</param>
-    <param name="checksum">2ae905d10c02e661f5c4a94c6ebbb522e0f023240b8157fbc3819ef97f94e4cf</param>
+    <param name="checksum">3039dea7d143a85a2f8ffb0c30d53c7158bc0ca49c372045c4d3bae45a258d6f</param>
   </service>
 </services>
