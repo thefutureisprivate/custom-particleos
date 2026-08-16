@@ -25,7 +25,9 @@ enable sshd.socket
 
 # First-boot administration and core maintenance.
 disable authselect-apply-changes.service
-enable systemd-homed-firstboot.service
+disable systemd-homed.service
+disable systemd-homed-firstboot.service
+enable particleos-admin-firstboot.service
 # Authentication helpers run as root through a private AF_UNIX socket instead
 # of gaining privilege from executable file mode bits.
 enable polkit-agent-helper.socket

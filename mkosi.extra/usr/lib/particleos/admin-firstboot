@@ -1,0 +1,148 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+
+export LC_ALL=C
+
+readonly state_directory=/var/lib/particleos
+readonly marker="$state_directory/admin-provisioned"
+readonly pending="$state_directory/admin-provisioning"
+
+username=
+password=
+confirmation=
+authorized_key=
+key_file=
+account_created=0
+
+valid_username() {
+    [[ $1 =~ ^[a-z][a-z0-9_-]{0,30}$ ]]
+}
+
+cleanup() {
+    local status=$?
+
+    trap - EXIT
+    password=
+    confirmation=
+    authorized_key=
+    if [[ -n $key_file ]]; then
+        rm --force -- "$key_file"
+    fi
+
+    if ((status != 0)); then
+        if ((account_created != 0)); then
+            userdel --remove -- "$username" || true
+        fi
+        rm --force -- "$pending"
+    fi
+
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
+[[ ! -e $marker ]] || exit 0
+[[ -t 0 && -t 1 ]] || {
+    echo "ParticleOS administrator provisioning requires the system console." >&2
+    exit 1
+}
+
+install --directory --mode=0700 --owner=root --group=root "$state_directory"
+
+# A power loss cannot strand an unmarked local account. The pending record is
+# written before useradd and atomically becomes the completion marker. Only a
+# normal local UID created by this wizard is eligible for cleanup.
+if [[ -f $pending ]]; then
+    stale_username=
+    IFS= read -r stale_username <"$pending" || true
+    if valid_username "$stale_username" && getent passwd "$stale_username" >/dev/null; then
+        stale_uid=$(id --user "$stale_username")
+        if ((stale_uid >= 1000 && stale_uid <= 60000)); then
+            userdel --remove -- "$stale_username" || true
+        fi
+    fi
+    rm --force -- "$pending"
+fi
+
+printf '\nParticleOS administrator provisioning\n'
+printf 'The password is used only for console and run0 authentication.\n'
+printf 'Remote SSH access is key-only.\n\n'
+
+while true; do
+    read -r -p 'Administrator username: ' username
+    if ! valid_username "$username"; then
+        echo "Use 1-31 lowercase letters, digits, underscores, or hyphens; start with a letter." >&2
+        continue
+    fi
+    if getent passwd "$username" >/dev/null; then
+        echo "That account already exists." >&2
+        continue
+    fi
+    break
+done
+
+while true; do
+    read -r -s -p 'Administrator password (minimum 14 characters): ' password
+    printf '\n'
+    if ((${#password} < 14)); then
+        echo "The password must contain at least 14 characters." >&2
+        password=
+        continue
+    fi
+    read -r -s -p 'Confirm administrator password: ' confirmation
+    printf '\n'
+    if [[ $password != "$confirmation" ]]; then
+        echo "The passwords do not match." >&2
+        password=
+        confirmation=
+        continue
+    fi
+    confirmation=
+    break
+done
+
+key_file=$(mktemp /run/particleos-admin-key.XXXXXX)
+chmod 0600 "$key_file"
+while true; do
+    read -r -p 'Administrator Ed25519 public key: ' authorized_key
+    if [[ ! $authorized_key =~ ^ssh-ed25519[[:space:]]+[A-Za-z0-9+/]+={0,3}([[:space:]][^[:cntrl:]]*)?$ ]]; then
+        echo "Enter one raw ssh-ed25519 public key without authorized_keys options." >&2
+        continue
+    fi
+    printf '%s\n' "$authorized_key" >"$key_file"
+    if key_fingerprint=$(ssh-keygen -l -f "$key_file" 2>/dev/null) &&
+            [[ $key_fingerprint == *" (ED25519)" ]]; then
+        printf 'Installing SSH key: %s\n' "$key_fingerprint"
+        break
+    fi
+    echo "The Ed25519 public key is malformed." >&2
+done
+
+(umask 077; printf '%s\n' "$username" >"$pending")
+useradd \
+    --no-log-init \
+    --no-create-home \
+    --user-group \
+    --groups wheel,systemd-journal \
+    --shell /bin/bash \
+    -- "$username"
+account_created=1
+
+# chpasswd reads the plaintext through its private pipe. The password is never
+# placed in the environment, an argument, a file, or the journal.
+printf '%s:%s\n' "$username" "$password" | chpasswd
+password=
+
+install --directory --mode=0700 --owner="$username" --group="$username" \
+    "/home/$username" "/home/$username/.ssh"
+install --mode=0600 --owner="$username" --group="$username" \
+    "$key_file" "/home/$username/.ssh/authorized_keys"
+restorecon -RF "/home/$username"
+
+mv --force --no-target-directory "$pending" "$marker"
+chmod 0600 "$marker"
+account_created=0
+
+printf '\nAdministrator %s is ready. SSH key fingerprint: %s\n' \
+    "$username" "$key_fingerprint"

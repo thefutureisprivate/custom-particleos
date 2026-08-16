@@ -63,7 +63,7 @@ Every current role inherits:
 - authenticated DNS over TLS to Cloudflare with fail-closed local DNSSEC
   validation, no DHCP/RA resolver override, and no plaintext DNS egress;
 - complete ptrace attachment denial, SELinux-denied user namespaces outside
-  the kernel, PID 1, and the confined sysupdate/homed helper domains,
+  the kernel, PID 1, and the confined sysupdate helper domain,
   secureblue userspace socket-class restrictions, and layered core-dump
   prevention;
 - zero set-user-ID or set-group-ID executables: `mount` and `umount` remain
@@ -292,25 +292,19 @@ boot volume must be expanded to at least 8 GiB before the first boot so
 systemd-repart has space to create the 2 GiB encrypted swap and writable root
 partitions. Booting the unexpanded transport image cannot complete
 provisioning. The production UKI intentionally contains no interactive or
-destructive installer
-profile. On first boot, the console wizard creates a systemd-homed administrator
-as an SELinux-labelled directory inside the TPM2/LUKS-encrypted writable root.
-The account is added to `wheel` and `systemd-journal`; no fixed account or
-password is built into the image.
+destructive installer profile. On first boot, the console wizard requires a
+new local administrator name, a password of at least 14 characters, and one
+raw Ed25519 SSH public key. It creates an SELinux-labelled home inside the
+TPM2/LUKS-encrypted writable root, adds the account to `wheel` and
+`systemd-journal`, and installs the validated key at mode 0600. No fixed
+account, password, or public key is built into the image.
 
-Before relying on remote administration, register the administrator's SSH
-public key in the systemd-homed identity from that first console session:
-
-```sh
-run0 homectl update "$USER" \
-    --ssh-authorized-keys='ssh-ed25519 REPLACE_WITH_THE_PUBLIC_KEY admin'
-userdbctl ssh-authorized-keys "$USER"
-```
-
-The public key is not a secret. Merely writing it to
-`~/.ssh/authorized_keys` is insufficient for cold-boot access because the
-encrypted home is still locked when sshd performs its initial authorization;
-sshd obtains pre-unlock keys from systemd-userdb instead.
+The password is used only for console and `run0` authentication; SSH remains
+key-only. The public key is not a secret and is available to sshd immediately
+after a cold boot because the persistent root is already unlocked. ParticleOS
+does not use systemd-homed: a password-encrypted homed account generally needs
+that password or another home-unlocking token before a login session can be
+activated, while OpenSSH public-key authentication does not supply it.
 
 The first writable root receives a stable role-specific hostname derived from
 the machine ID (`particle-web-…` or `particle-mail-…`). An administrator may
@@ -331,36 +325,6 @@ Published artifacts report either `ParticleOS-Webserver` or
 `hostnamectl`. `ParticleOS-Dnsserver` remains reserved for the empty image
 definition. These values describe the atomic image slot and are separate from
 Fedora's package-compatible `ID=fedora` and `VERSION_ID=44`.
-
-### Adopt an existing homed account
-
-Updates and rollbacks retain the encrypted writable root, so locally created
-`/home/*.homedir` accounts need no migration step. To recover a homed directory
-that was unregistered or restored at another persistent path, preserve its
-ownership, ACLs, extended attributes, and embedded `.identity` record, then
-adopt it explicitly:
-
-```sh
-run0 homectl adopt /persistent/path/admin.homedir
-run0 homectl inspect admin
-```
-
-`homectl adopt` registers the referenced directory in place; it does not move
-or copy it. Keep the path on encrypted persistent storage. A home originating
-on another machine remains signed by that machine. Import only that trusted
-machine's public homed signing key before adoption—never its private key—and
-remove the public key again when homes from that origin should no longer be
-accepted:
-
-```sh
-run0 homectl add-signing-key --key-name=old-vps.public ./old-vps.public
-run0 homectl adopt /persistent/path/admin.homedir
-run0 homectl remove-signing-key old-vps.public
-```
-
-Use console or out-of-band access and verify the source key fingerprint before
-trusting it. Adoption is not a substitute for a backup and does not bypass the
-home record's signature or password authentication.
 
 ## Operate the web server
 
@@ -549,10 +513,10 @@ ParticleOS OBS repository key, and Fedora/systemd repositories as
 release-critical trust roots.
 
 Configuration under `/usr/lib/particleos` is immutable and changes through a
-new signed image. Per-machine SSH policy and homed storage are shared mutable
-surfaces. The webserver role additionally permits Certbot state, nginx virtual
-hosts, and web content. The mailserver role permits only its labelled Stalwart
-configuration/state and PostgreSQL data; the dormant DNS image adds no package
-or mutable role policy. Add required virtual hardware drivers to the early
-module list before building: module loading is permanently disabled for the
-rest of each boot.
+new signed image. Per-machine SSH policy and the administrator's encrypted-root
+home are shared mutable surfaces. The webserver role additionally permits
+Certbot state, nginx virtual hosts, and web content. The mailserver role permits
+only its labelled Stalwart configuration/state and PostgreSQL data; the dormant
+DNS image adds no package or mutable role policy. Add required virtual hardware
+drivers to the early module list before building: module loading is permanently
+disabled for the rest of each boot.

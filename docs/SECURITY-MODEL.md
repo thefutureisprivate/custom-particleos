@@ -187,7 +187,7 @@ intentionally retain `NoNewPrivileges=yes`; no runtime-file access is granted
 to `init_t`.
 The same narrowly scoped policy preserves Fedora's chained transitions for
 device sysctls and LVM probing, Ed25519 host-key generation and relabeling,
-homed account creation, console authentication, the per-user manager and
+first-boot account creation, console authentication, the per-user manager and
 login shell, and OpenSSH's current session re-exec. Each source and target is
 named explicitly; no unrelated domain receives `nosuid_transition` and the
 related `nnp_transition` permission is limited to the PostgreSQL and Stalwart
@@ -216,8 +216,8 @@ Yama scope 3 and the SELinux `deny_ptrace` boolean prohibit process attachment;
 scope 3 cannot be relaxed without rebooting. Unprivileged BPF and io_uring are
 disabled. User namespaces have a low per-UID ceiling and secureblue-derived
 SELinux policy denies their creation to every domain except `kernel_t`,
-`init_t`, `systemd_importd_t`, and `systemd_homework_t`. The latter two are
-Fedora's confined helper domains for systemd-sysupdate and systemd-homed.
+`init_t`, and `systemd_importd_t`. The latter is Fedora's confined helper
+domain for systemd-sysupdate.
 Login users, `run0` shells, and all other shipped service domains remain
 denied. Fedora's current kernel no longer exposes the obsolete
 `kernel.unprivileged_userns_clone` sysctl, so the image relies on the tested
@@ -252,8 +252,8 @@ can traverse it, while the immutable target policy files keep their
 policy-specific labels. An exact symlink-only local file-context entry keeps
 systemd-tmpfiles from replacing that label with `selinux_config_t`; it does not
 change any label below the immutable policy directory. PID 1 may create the
-udev compatibility control symlink and homed may read that link, but neither
-receives access to the underlying Varlink endpoint from this policy.
+udev compatibility control symlink but receives no access to the underlying
+Varlink endpoint from this policy.
 
 ## Network policy
 
@@ -337,21 +337,31 @@ attempt; normal mail retry semantics handle those runtime failures.
 
 ## Administration
 
-There are no embedded user credentials. On first boot, systemd-homed prompts on
-the VPS console and creates a directory-backed user in `wheel` and
-`systemd-journal` inside the TPM2/LUKS-encrypted writable root. Directory
-storage is deliberate: ordinary directory creation receives
-`user_home_dir_t`, whereas Btrfs subvolume roots are created without an SELinux
-label. Polkit authorizes run0; sudo is absent. Polkit's private socket activates
-its PAM helper as a root service, so authentication does not require a SUID
-executable. If that socket is unavailable, direct helper fallback fails closed
-after finalization removes the set-ID bit.
+There are no embedded user credentials. A console-only service blocks the first
+transition to `multi-user.target` until it creates a classic local user in
+`wheel` and `systemd-journal` inside the TPM2/LUKS-encrypted writable root. The
+wizard requires a password of at least 14 characters and a syntactically valid
+raw Ed25519 public key. It passes the plaintext password only through a private
+pipe to `chpasswd`, clears the shell variables, creates the home at mode 0700
+and `authorized_keys` at mode 0600, restores SELinux labels, then atomically
+records completion. A pending-account record makes interruption and power-loss
+cleanup bounded to a normal local UID. The service has no network namespace,
+strict filesystem write paths, a bounded capability set, and the minimum
+`nosuid_transition` allowances for Fedora's `useradd_t`, `passwd_t`,
+`ssh_keygen_t`, and `setfiles_t` helper domains. A narrow explicit transition
+places `chpasswd` in `passwd_t`; the shadow database is not exposed to
+`init_t`.
 
-The first console session must also register the administrator's public SSH key
-with `homectl update --ssh-authorized-keys=`. This places the non-secret key in
-the userdb identity that sshd can query while the encrypted home is still
-locked. An `authorized_keys` file inside that home remains unavailable during
-cold-boot authorization and is therefore not the supported provisioning path.
+The password is used by console login and run0; SSH is key-only. The classic
+home is directly readable after the encrypted persistent root is unlocked, so
+OpenSSH can authorize the installed public key on a cold boot without access to
+the password. systemd-homed is intentionally removed: its password-protected
+home activation generally requires the password or another home-unlocking
+token, which an SSH public-key signature does not provide. Polkit authorizes
+run0; sudo is absent. Polkit's private socket activates its PAM helper as a root
+service, so authentication does not require a SUID executable. If that socket
+is unavailable, direct helper fallback fails closed after finalization removes
+the set-ID bit.
 
 Fedora's `mount` and `umount` binaries remain available at mode 0755, so
 administrators and recovery units can use them through an already privileged
@@ -384,7 +394,7 @@ or trusted out-of-band access.
 
 Shared mutable operator-controlled paths are intentionally limited to:
 
-- `/home/*.homedir` and explicitly adopted systemd-homed directories;
+- `/home/<administrator>` on the encrypted writable root;
 - `/etc/particleos/ssh-allowlist.nft`.
 
 The webserver role additionally permits:

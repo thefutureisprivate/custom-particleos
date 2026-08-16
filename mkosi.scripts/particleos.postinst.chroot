@@ -3,11 +3,6 @@
 set -euo pipefail
 
 authselect select local
-authselect enable-feature with-systemd-homed
-
-# Account recovery uses systemd-homed's current explicit adoption API. Keep it
-# as a hard image-build requirement.
-homectl --help | grep -F "adopt PATH" >/dev/null
 
 # run0 authenticates through polkit. Require its current root, socket-activated
 # PAM helper units so the helper executable does not need a SUID transition.
@@ -83,7 +78,6 @@ semodule -X 300 -i \
     /usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil \
     /usr/lib/particleos/selinux/particleos_runtime_symlinks.cil \
     /usr/lib/particleos/selinux/particleos_pcr_measurement.cil \
-    /usr/lib/particleos/selinux/particleos_homed_login.cil \
     "${selinux_role_modules[@]}"
 
 # /etc/selinux is an immutable factory symlink. systemd-tmpfiles consults the
@@ -139,23 +133,19 @@ if [[ -d /etc/pam.d ]]; then
     rmdir /etc/pam.d
 fi
 
-# pam_unix can validate the shadow hash exported by systemd-homed but cannot
-# activate the home. Run pam_systemd_home first so it receives the password.
-for pam_stack in /usr/lib/pam.d/system-auth /usr/lib/pam.d/password-auth; do
-    sed --in-place \
-        '/^auth[[:space:]].*pam_systemd_home\.so[[:space:]]*$/d' "$pam_stack"
-    sed --in-place \
-        '/^auth[[:space:]].*pam_unix\.so/i auth        sufficient                                   pam_systemd_home.so' \
-        "$pam_stack"
-done
+# Remove PAM integrations which are either obsolete or belong to the removed
+# systemd-homed account stack. Classic local users authenticate through the
+# selected authselect `local` profile and pam_unix.
+find /usr/lib/pam.d/ -mindepth 1 -type f -exec sed --in-place \
+    -e '/pam_shells\.so/d' \
+    -e '/pam_securetty\.so/d' \
+    -e '/pam_systemd_home\.so/d' \
+    -e '/pam_systemd_loadkey\.so/d' {} \;
 
-# Remove obsolete entries from the PAM stack.
-find /usr/lib/pam.d/ -mindepth 1 -exec sed --in-place '/pam_shells.so/d' {} \;
-find /usr/lib/pam.d/ -mindepth 1 -exec sed --in-place '/pam_securetty.so/d' {} \;
-
-# Fedora ships the current systemd-userdb SSH integration disabled as an
-# example. Make its presence a build invariant instead of carrying a fallback.
-ln --symbolic 20-systemd-userdb.conf.example /usr/lib/tmpfiles.d/20-systemd-userdb.conf
+# Do not expose systemd-userdb's SSH AuthorizedKeysCommand. The first-boot
+# wizard installs the required key in the classic administrator's encrypted
+# persistent home, so OpenSSH can read it directly after a cold boot.
+rm --force /usr/lib/tmpfiles.d/20-systemd-userdb.conf
 
 # Keep the installed host headless.
 ln --symbolic --force multi-user.target /usr/lib/systemd/system/default.target
