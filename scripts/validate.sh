@@ -70,6 +70,9 @@ stalwart_service_template=.obs/stalwart-image/x86-64/_service.example
 project_cert_installer=mkosi.scripts/particleos.install-project-cert
 postinst=mkosi.scripts/particleos.postinst.chroot
 finalize=mkosi.scripts/particleos.finalize
+hostname_apply=mkosi.extra/usr/lib/particleos/apply-hostname
+hostname_unit=mkosi.extra/usr/lib/systemd/system/particleos-hostname.service
+base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 obs_recipes=("$obs_recipe" "$stalwart_obs_recipe")
 
 require_fixed "Dependencies=webserver,mailserver" mkosi.conf
@@ -256,7 +259,7 @@ require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
 
 require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
-require_fixed "ImageVersion=0.16.17.20" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.21" "$stalwart_service_config"
 require_fixed "Format=disk" "$stalwart_service_config"
 require_fixed "Bootable=no" "$stalwart_service_config"
 require_fixed "ElTorito=no" "$stalwart_service_config"
@@ -305,11 +308,11 @@ for metadata_key in \
         AUTOMATIC_UPDATE ROLLBACK_COMPATIBLE_FROM; do
     require_fixed "$metadata_key=" "$stalwart_service_release"
 done
-require_fixed "STALWART_PACKAGE_RELEASE=19" "$stalwart_service_release"
-require_fixed "IMAGE_VERSION=0.16.17.20" "$stalwart_service_release"
+require_fixed "STALWART_PACKAGE_RELEASE=20" "$stalwart_service_release"
+require_fixed "IMAGE_VERSION=0.16.17.21" "$stalwart_service_release"
 require_fixed "UPDATE_KIND=patch" "$stalwart_service_release"
 require_fixed "AUTOMATIC_UPDATE=yes" "$stalwart_service_release"
-require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14:0.16.17.16" \
+require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14:0.16.17.16:0.16.17.20" \
     "$stalwart_service_release"
 require_fixed 'NAME="ParticleOS Stalwart Service Image"' \
     mkosi.scripts/stalwart-service.postinst.chroot
@@ -855,6 +858,15 @@ require_fixed 'printf '\''%s\n'\'' "$particleos_hostname" >/etc/hostname' \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed "C /etc/hostname 0644 root root - /usr/share/factory/etc/hostname" \
     mkosi.extra/usr/lib/tmpfiles.d/etc.conf
+require_fixed 'exec /usr/bin/hostnamectl hostname "$configured_hostname"' \
+    "$hostname_apply"
+require_fixed "After=local-fs.target systemd-hostnamed.service" "$hostname_unit"
+require_fixed "Before=network-pre.target" "$hostname_unit"
+require_fixed "CapabilityBoundingSet=" "$hostname_unit"
+require_fixed "NoNewPrivileges=yes" "$hostname_unit"
+require_fixed "ProtectHostname=yes" "$hostname_unit"
+require_fixed "RestrictAddressFamilies=AF_UNIX" "$hostname_unit"
+require_fixed "enable particleos-hostname.service" "$base_preset"
 require_fixed "UPDATE_KIND=patch" "$stalwart_image_readme"
 require_fixed "database-aware migration" "$stalwart_image_readme"
 require_fixed "meta skuid systemd-resolve ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 853 accept" "$base_firewall"
@@ -863,7 +875,6 @@ require_fixed "meta skuid chrony tcp dport 4460 accept" "$base_firewall"
 require_fixed "socket cgroupv2 level 2 @sysupdate_cgroups tcp dport 443 ct state new limit rate 16/second burst 32 packets accept"     mkosi.extra/usr/lib/particleos/nftables.conf
 require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups"     mkosi.extra/usr/lib/systemd/system/systemd-sysupdate-update.service.d/40-particleos-egress.conf
 require_fixed "enable systemd-sysupdate-update.timer"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
-base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 network_wait_dropin=mkosi.extra/usr/lib/systemd/system/systemd-networkd-wait-online.service.d/40-particleos-nonblocking.conf
 require_fixed "disable systemd-networkd-wait-online.service" "$base_preset"
 reject_fixed "enable systemd-networkd-wait-online.service" "$base_preset"

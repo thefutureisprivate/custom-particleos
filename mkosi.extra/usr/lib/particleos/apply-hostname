@@ -1,0 +1,11 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+set -euo pipefail
+
+# The shared initrd uses Fedora's generic fallback before it knows which role
+# will be selected. Re-apply the persistent real-root hostname after
+# switch-root. hostnamectl expands a trailing question-mark pattern from the
+# machine ID while preserving an administrator's later static replacement.
+IFS= read -r configured_hostname </etc/hostname
+[[ -n $configured_hostname ]]
+exec /usr/bin/hostnamectl hostname "$configured_hostname"

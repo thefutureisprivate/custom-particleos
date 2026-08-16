@@ -30,6 +30,7 @@ enable systemd-homed-firstboot.service
 # of gaining privilege from executable file mode bits.
 enable polkit-agent-helper.socket
 enable preset-global.service
+enable particleos-hostname.service
 enable systemd-oomd.service
 enable systemd-sysupdate-update.timer
 enable systemd-sysupdate-reboot.timer

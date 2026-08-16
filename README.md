@@ -295,7 +295,9 @@ password is built into the image.
 The first writable root receives a stable role-specific hostname derived from
 the machine ID (`particle-web-…` or `particle-mail-…`). An administrator may
 replace it with `hostnamectl`; that local setting persists across OS A/B
-updates and rollbacks.
+updates and rollbacks. Because the role-independent initrd initially sees only
+Fedora's generic fallback, `particleos-hostname.service` re-applies the
+persistent real-root hostname after switch-root and before networking.
 
 Use `run0` for privileged operations:
 

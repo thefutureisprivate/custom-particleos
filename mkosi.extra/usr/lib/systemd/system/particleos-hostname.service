@@ -1,0 +1,39 @@
+[Unit]
+Description=Apply the persistent ParticleOS hostname after switch-root
+Documentation=man:hostnamectl(1) man:hostname(5)
+Wants=systemd-hostnamed.service network-pre.target
+After=local-fs.target systemd-hostnamed.service
+Before=network-pre.target
+ConditionPathExists=/etc/hostname
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/particleos/apply-hostname
+RemainAfterExit=yes
+CapabilityBoundingSet=
+DevicePolicy=closed
+IPAddressDeny=any
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateIPC=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target
