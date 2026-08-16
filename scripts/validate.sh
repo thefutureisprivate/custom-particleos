@@ -259,6 +259,7 @@ require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
 require_fixed "ImageVersion=0.16.17.16" "$stalwart_service_config"
 require_fixed "Format=disk" "$stalwart_service_config"
 require_fixed "Bootable=no" "$stalwart_service_config"
+reject_fixed "ElTorito=" "$stalwart_service_config"
 require_fixed "SELinuxRelabel=yes" "$stalwart_service_config"
 require_fixed "RepartDirectories=%D/mkosi.images/stalwart-service/mkosi.repart" \
     "$stalwart_service_config"
@@ -332,9 +333,10 @@ for seed_key in \
 done
 require_fixed "PostInstallationScripts=%D/mkosi.scripts/particleos.install-stalwart-seed" \
     mkosi.images/mailserver/mkosi.conf
+require_fixed "ExtraTrees=%D/mkosi.resources/stalwart-seed:/usr/lib/particleos/stalwart/seed" \
+    mkosi.images/mailserver/mkosi.conf
 test -x "$stalwart_seed_installer" || fail "$stalwart_seed_installer must be executable"
-require_fixed 'readonly metadata_file=${SRCDIR:?}/mkosi.resources/stalwart-seed/release' \
-    "$stalwart_seed_installer"
+require_fixed 'readonly metadata_file=$destination_dir/release' "$stalwart_seed_installer"
 require_fixed "readonly sources_dir=/usr/src/packages/SOURCES" "$stalwart_seed_installer"
 require_fixed "sha256sum --check --strict" "$stalwart_seed_installer"
 require_fixed 'zstd --decompress --force --sparse -o "$temporary"' "$stalwart_seed_installer"

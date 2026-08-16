@@ -5,9 +5,9 @@ umask 0077
 
 [[ ${IMAGE_ID:?} == ParticleOS-Mailserver ]]
 
-readonly metadata_file=${SRCDIR:?}/mkosi.resources/stalwart-seed/release
 readonly sources_dir=/usr/src/packages/SOURCES
 readonly destination_dir=$BUILDROOT/usr/lib/particleos/stalwart/seed
+readonly metadata_file=$destination_dir/release
 
 declare -A seed=()
 
