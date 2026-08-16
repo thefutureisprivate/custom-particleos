@@ -1,0 +1,17 @@
+; SPDX-License-Identifier: LGPL-2.1-or-later
+
+; systemd-sysupdate executes systemd-pull directly for URL transfers. Keep the
+; image manager itself networkless and transition only Fedora's labelled pull
+; helper into the existing confined systemd_importd_t domain.
+(block particleos_stalwart_pull
+  (allow .stalwart_image_manager_t .systemd_importd_exec_t
+    (file (getattr open map read execute ioctl)))
+  (allow .stalwart_image_manager_t .systemd_importd_t
+    (process (transition)))
+  (typetransition .stalwart_image_manager_t .systemd_importd_exec_t
+    process .systemd_importd_t)
+
+  ; particleos-stalwart-update.service sets both hardening properties. Permit
+  ; the domain transition without weakening either service-level restriction.
+  (allow .stalwart_image_manager_t .systemd_importd_t
+    (process2 (nnp_transition nosuid_transition))))

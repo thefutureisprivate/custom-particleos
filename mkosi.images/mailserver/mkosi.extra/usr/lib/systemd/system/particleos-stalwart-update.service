@@ -14,8 +14,9 @@ CapabilityBoundingSet=
 DevicePolicy=closed
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
-# systemd-sysupdate remains in the dedicated image-manager domain and asks the
-# separately confined systemd-importd service to acquire URLs over D-Bus.
+# systemd-sysupdate remains in the networkless image-manager domain. Its
+# labelled systemd-pull child transitions into Fedora's confined importd
+# domain; this unit's cgroup-bound nftables rule also covers that descendant.
 NoNewPrivileges=yes
 PrivateDevices=yes
 PrivateTmp=yes

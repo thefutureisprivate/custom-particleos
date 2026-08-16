@@ -684,6 +684,7 @@ stalwart_update_timer="$mail_extra/usr/lib/systemd/system/particleos-stalwart-up
 stalwart_sysupdate="$mail_extra/usr/lib/sysupdate.stalwart.d/50-stalwart.transfer"
 stalwart_image_tmpfiles="$mail_extra/usr/lib/tmpfiles.d/particleos-stalwart-images.conf"
 stalwart_image_readme="$mail_extra/usr/share/doc/particleos/stalwart/IMAGE-UPDATES.md"
+stalwart_pull_policy="$mail_extra/usr/lib/particleos/selinux/particleos_stalwart_pull.cil"
 require_fixed "authenticator = webroot" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "webroot-path = /var/www/html" $web_extra/usr/lib/particleos/certbot/cli.ini
 require_fixed "required-profile = shortlived" $web_extra/usr/lib/particleos/certbot/cli.ini
@@ -821,6 +822,22 @@ require_fixed "CREATE ROLE stalwart LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE" "
 require_fixed "REVOKE ALL ON DATABASE stalwart FROM PUBLIC" "$stalwart_db_setup"
 reject_fixed "PASSWORD" "$stalwart_db_setup"
 require_fixed "/usr/share/selinux/packages/particleos_stalwart.pp" mkosi.scripts/particleos.postinst.chroot
+require_fixed "/usr/lib/particleos/selinux/particleos_stalwart_pull.cil" \
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed ".stalwart_image_manager_t .systemd_importd_exec_t" \
+    "$stalwart_pull_policy"
+require_fixed "(file (getattr open map read execute ioctl))" "$stalwart_pull_policy"
+require_fixed ".stalwart_image_manager_t .systemd_importd_t" \
+    "$stalwart_pull_policy"
+require_fixed "(process (transition))" "$stalwart_pull_policy"
+require_fixed "(typetransition .stalwart_image_manager_t .systemd_importd_exec_t" \
+    "$stalwart_pull_policy"
+require_fixed "(process2 (nnp_transition nosuid_transition))" \
+    "$stalwart_pull_policy"
+if rg -n '(\.stalwart_image_manager_t.*tcp_socket|tcp_socket.*\.stalwart_image_manager_t)' \
+        "$stalwart_pull_policy"; then
+    fail "the Stalwart image-manager domain must not receive direct TCP access"
+fi
 if rg -n 'STALWART_DB_PASSWORD|authSecret.*EnvironmentVariable' "$mail_extra"; then
     fail "mailserver must not carry a database secret in the environment"
 fi
@@ -872,6 +889,7 @@ require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager update" \
     "$stalwart_update_unit"
 require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups" \
     "$stalwart_update_unit"
+require_fixed "labelled systemd-pull child transitions" "$stalwart_update_unit"
 require_fixed "CapabilityBoundingSet=" "$stalwart_update_unit"
 require_fixed "DevicePolicy=closed" "$stalwart_update_unit"
 require_fixed "NoNewPrivileges=yes" "$stalwart_update_unit"
@@ -896,6 +914,8 @@ require_fixed "d /var/lib/particleos/stalwart/staging 0700 root root -" \
     "$stalwart_image_tmpfiles"
 require_fixed "OS A/B updates and rollbacks never" "$stalwart_image_readme"
 require_fixed "stalwart_image_manager_t" "$stalwart_image_readme"
+require_fixed 'transitions into Fedora'"'"'s confined `systemd_importd_t` domain' \
+    "$stalwart_image_readme"
 require_fixed "sysupdate's installed" "$stalwart_image_readme"
 require_fixed 'printf '\''%s\n'\'' "$particleos_hostname" >/etc/hostname' \
     mkosi.scripts/particleos.postinst.chroot

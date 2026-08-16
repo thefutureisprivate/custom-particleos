@@ -26,7 +26,10 @@ then copies the candidate into the protected image store for selection. A
 dedicated `stalwart_image_manager_t` SELinux domain is the only userspace
 domain allowed to write that store. Promotion fails closed unless the new file
 inherits the exact `stalwart_image_t` label; the capability-free service never
-changes ownership or relabels files at runtime.
+changes ownership or relabels files at runtime. The manager remains
+networkless: systemd-sysupdate's labelled `systemd-pull` child alone
+transitions into Fedora's confined `systemd_importd_t` domain, and the
+unit-cgroup nftables allow-list covers that descendant's bounded HTTPS access.
 
 Automatic activation is allowed only when every condition below is explicit
 in the signed metadata:

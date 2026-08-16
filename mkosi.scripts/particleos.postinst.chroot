@@ -68,8 +68,9 @@ if [[ $IMAGE_ID == ParticleOS-Webserver ]]; then
     )
 elif [[ $IMAGE_ID == ParticleOS-Mailserver ]]; then
     selinux_role_modules+=(
-        /usr/lib/particleos/selinux/particleos_mail_health.cil
         /usr/share/selinux/packages/particleos_stalwart.pp
+        /usr/lib/particleos/selinux/particleos_stalwart_pull.cil
+        /usr/lib/particleos/selinux/particleos_mail_health.cil
     )
 fi
 semodule -X 300 -i \
