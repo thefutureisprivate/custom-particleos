@@ -67,6 +67,21 @@ if [[ -n "$remaining_setid" ]]; then
     exit 1
 fi
 
+# systemd-homed installs static aliases and wants links independently of
+# presets. The daemon and its activation units have already been removed from
+# immutable /usr; remove their /etc counterparts before capturing the factory
+# tree, and fail if a future package adds an unreviewed homed activation link.
+rm -f \
+    "$BUILDROOT/etc/systemd/system/dbus-org.freedesktop.home1.service" \
+    "$BUILDROOT/etc/systemd/system/multi-user.target.wants/systemd-homed.service"
+homed_wants="$BUILDROOT/etc/systemd/system/systemd-homed.service.wants"
+rm -f \
+    "$homed_wants/systemd-homed-activate.service" \
+    "$homed_wants/systemd-homed-firstboot.service"
+if [[ -d $homed_wants ]]; then
+    rmdir "$homed_wants"
+fi
+
 # Capture the entirety of /etc in /usr/share/factory/etc so we can use
 # systemd-tmpfiles to symlink individual directories from it to /etc.
 mkdir -p "$BUILDROOT/usr/share/factory/"

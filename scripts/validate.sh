@@ -669,6 +669,15 @@ for removed_homed_source in \
         mkosi.extra/usr/lib/systemd/system/systemd-homed-firstboot.service.d/40-particleos-admin.conf; do
     [[ ! -e $removed_homed_source ]] || fail "$removed_homed_source must be removed"
 done
+require_fixed '"$BUILDROOT/etc/systemd/system/dbus-org.freedesktop.home1.service"' \
+    "$finalize"
+require_fixed '"$BUILDROOT/etc/systemd/system/multi-user.target.wants/systemd-homed.service"' \
+    "$finalize"
+require_fixed 'homed_wants="$BUILDROOT/etc/systemd/system/systemd-homed.service.wants"' \
+    "$finalize"
+require_fixed '"$homed_wants/systemd-homed-activate.service"' "$finalize"
+require_fixed '"$homed_wants/systemd-homed-firstboot.service"' "$finalize"
+require_fixed 'rmdir "$homed_wants"' "$finalize"
 require_fixed "PermitRootLogin no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PasswordAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "HostKey /etc/ssh/ssh_host_ed25519_key"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
