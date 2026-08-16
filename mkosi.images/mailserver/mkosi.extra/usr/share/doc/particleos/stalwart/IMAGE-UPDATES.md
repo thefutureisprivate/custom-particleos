@@ -16,7 +16,10 @@ selection. `previous.raw` retains the last healthy application version.
 `stalwart_images` OBS repository with systemd-sysupdate's signed SHA256SUMS
 verification into a distinct staging directory. Downloader retention can
 therefore never unlink `current.raw`, `previous.raw`, or their protected image
-files. Acquisition does not select an image. The image manager then
+files. The latest verified acquisition remains there as sysupdate's installed
+version marker; promotion uses a reflink where the encrypted root supports it,
+and only the separately labelled managed copy is selectable or executable.
+Acquisition does not select an image. The image manager then
 mounts it through a transient `RootImage=` unit so PID 1 verifies its embedded
 signature and dm-verity tree before the release metadata can be read, and only
 then copies the candidate into the protected image store for selection. A

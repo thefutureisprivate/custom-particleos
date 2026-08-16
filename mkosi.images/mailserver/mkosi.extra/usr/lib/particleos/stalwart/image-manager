@@ -411,14 +411,19 @@ import_staged_image() {
         destination_digest=${destination_digest%% *}
         [[ $staged_digest == "$destination_digest" ]] ||
             die "staged image collides with a different managed image: ${staged##*/}"
-        rm -f -- "$staged"
+        # Keep the verified acquisition as systemd-sysupdate's installed
+        # version marker. The separately labelled managed copy remains the
+        # only image eligible for selection and execution.
+        sync -d "$staged"
         sync -d "$staging_dir"
         printf '%s' "$destination"
         return
     fi
 
     promote_image "$staged" "$destination" "${staged##*/}"
-    rm -f -- "$staged"
+    # promote_image uses a reflink when the encrypted root supports it, so the
+    # retained sysupdate marker does not duplicate physical image extents.
+    sync -d "$staged"
     sync -d "$staging_dir"
     printf '%s' "$destination"
 }
@@ -480,11 +485,26 @@ activate_image() {
 }
 
 update_image() {
-    local current blocked candidate='' managed_candidate current_version image_version
+    local availability availability_status current blocked candidate='' managed_candidate current_version image_version
     local staged_images=()
     local image
 
-    systemd-sysupdate --component=stalwart update
+    if availability=$(systemd-sysupdate --component=stalwart --json=short check-new); then
+        availability_status=0
+    else
+        availability_status=$?
+    fi
+    if [[ $availability == '{"available":null}' ]]; then
+        ((availability_status == 0 || availability_status == 1)) ||
+            die 'failed to check the signed Stalwart image channel'
+    elif [[ $availability == '{"available":"'[0-9]*'"}' ]]; then
+        ((availability_status == 0)) ||
+            die 'failed to check the signed Stalwart image channel'
+        systemd-sysupdate --component=stalwart update ||
+            die 'failed to acquire the available Stalwart service image'
+    else
+        die "unexpected Stalwart update availability response: $availability"
+    fi
     current=$(resolve_link current.raw) || die 'no selected Stalwart image exists after update'
     current_version=$(version_from_path "$current")
     resolve_optional_link blocked.raw blocked

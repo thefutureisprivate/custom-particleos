@@ -796,7 +796,12 @@ require_fixed "HOST_ABI_CURRENT=1" "$stalwart_host_abi"
 require_fixed "HOST_ABI_ROLLBACK=1" "$stalwart_host_abi"
 require_fixed 'RootImagePolicy=$image_policy' "$stalwart_image_manager"
 require_fixed "systemd-run --quiet --wait --pipe --collect" "$stalwart_image_manager"
+require_fixed "systemd-sysupdate --component=stalwart --json=short check-new" \
+    "$stalwart_image_manager"
 require_fixed "systemd-sysupdate --component=stalwart update" "$stalwart_image_manager"
+require_fixed "'{\"available\":null}'" "$stalwart_image_manager"
+require_fixed "availability_status == 0 || availability_status == 1" \
+    "$stalwart_image_manager"
 require_fixed "readonly staging_dir=" "$stalwart_image_manager"
 require_fixed "import_staged_image" "$stalwart_image_manager"
 require_fixed "discarded invalid staged image" "$stalwart_image_manager"
@@ -845,6 +850,9 @@ require_fixed "Path=https://download.opensuse.org/repositories/home:/thefutureis
     "$stalwart_sysupdate"
 require_fixed "Type=regular-file" "$stalwart_sysupdate"
 require_fixed "Path=/var/lib/particleos/stalwart/staging" "$stalwart_sysupdate"
+require_fixed "MatchPattern=ParticleOS-Stalwart_@v_%a.raw.zst" "$stalwart_sysupdate"
+require_fixed "MatchPattern=ParticleOS-Stalwart_@v_%a.raw" "$stalwart_sysupdate"
+reject_fixed "@a" "$stalwart_sysupdate"
 require_fixed "ReadOnly=yes" "$stalwart_sysupdate"
 require_fixed "InstancesMax=2" "$stalwart_sysupdate"
 reject_fixed "CurrentSymlink=" "$stalwart_sysupdate"
@@ -854,6 +862,7 @@ require_fixed "d /var/lib/particleos/stalwart/staging 0700 root root -" \
     "$stalwart_image_tmpfiles"
 require_fixed "OS A/B updates and rollbacks never" "$stalwart_image_readme"
 require_fixed "stalwart_image_manager_t" "$stalwart_image_readme"
+require_fixed "sysupdate's installed" "$stalwart_image_readme"
 require_fixed 'printf '\''%s\n'\'' "$particleos_hostname" >/etc/hostname' \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed "C /etc/hostname 0644 root root - /usr/share/factory/etc/hostname" \
