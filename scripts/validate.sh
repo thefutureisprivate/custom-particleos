@@ -259,7 +259,7 @@ require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
 require_fixed "ImageVersion=0.16.17.20" "$stalwart_service_config"
 require_fixed "Format=disk" "$stalwart_service_config"
 require_fixed "Bootable=no" "$stalwart_service_config"
-reject_fixed "ElTorito=" "$stalwart_service_config"
+require_fixed "ElTorito=no" "$stalwart_service_config"
 require_fixed "SELinuxRelabel=yes" "$stalwart_service_config"
 require_fixed "RepartDirectories=%D/mkosi.images/stalwart-service/mkosi.repart" \
     "$stalwart_service_config"
