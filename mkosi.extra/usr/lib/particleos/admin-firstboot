@@ -13,10 +13,27 @@ password=
 confirmation=
 authorized_key=
 key_file=
+key_blob_file=
 account_created=0
 
 valid_username() {
     [[ $1 =~ ^[a-z][a-z0-9_-]{0,30}$ ]]
+}
+
+valid_ed25519_key() {
+    local key_type=
+    local key_payload=
+    local ignored=
+    local blob_hex=
+
+    read -r key_type key_payload ignored <"$key_file"
+    [[ $key_type == ssh-ed25519 && -n $key_payload ]] || return 1
+    printf '%s' "$key_payload" | base64 --decode >"$key_blob_file" 2>/dev/null || return 1
+    blob_hex=$(od --address-radix=n --format=x1 --output-duplicates "$key_blob_file" |
+        tr --delete '[:space:]')
+
+    # RFC 8709: string "ssh-ed25519", followed by one 32-byte public key.
+    [[ $blob_hex =~ ^0000000b7373682d6564323535313900000020[[:xdigit:]]{64}$ ]]
 }
 
 cleanup() {
@@ -28,6 +45,9 @@ cleanup() {
     authorized_key=
     if [[ -n $key_file ]]; then
         rm --force -- "$key_file"
+    fi
+    if [[ -n $key_blob_file ]]; then
+        rm --force -- "$key_blob_file"
     fi
 
     if ((status != 0)); then
@@ -103,7 +123,9 @@ while true; do
 done
 
 key_file=$(mktemp /run/particleos-admin-key.XXXXXX)
+key_blob_file=$(mktemp /run/particleos-admin-key-blob.XXXXXX)
 chmod 0600 "$key_file"
+chmod 0600 "$key_blob_file"
 while true; do
     read -r -p 'Administrator Ed25519 public key: ' authorized_key
     if [[ ! $authorized_key =~ ^ssh-ed25519[[:space:]]+[A-Za-z0-9+/]+={0,3}([[:space:]][^[:cntrl:]]*)?$ ]]; then
@@ -111,9 +133,7 @@ while true; do
         continue
     fi
     printf '%s\n' "$authorized_key" >"$key_file"
-    if key_fingerprint=$(ssh-keygen -l -f "$key_file" 2>/dev/null) &&
-            [[ $key_fingerprint == *" (ED25519)" ]]; then
-        printf 'Installing SSH key: %s\n' "$key_fingerprint"
+    if valid_ed25519_key; then
         break
     fi
     echo "The Ed25519 public key is malformed." >&2
@@ -139,6 +159,15 @@ install --directory --mode=0700 --owner="$username" --group="$username" \
 install --mode=0600 --owner="$username" --group="$username" \
     "$key_file" "/home/$username/.ssh/authorized_keys"
 restorecon -RF "/home/$username"
+
+# ssh-keygen runs in Fedora's confined ssh_keygen_t domain. Validate the
+# installed ssh_home_t file, not the init-created temporary file in /run.
+if ! key_fingerprint=$(ssh-keygen -l -f "/home/$username/.ssh/authorized_keys" 2>/dev/null) ||
+        [[ $key_fingerprint != *" (ED25519)" ]]; then
+    echo "The installed Ed25519 public key could not be verified." >&2
+    exit 1
+fi
+printf 'Installing SSH key: %s\n' "$key_fingerprint"
 
 mv --force --no-target-directory "$pending" "$marker"
 chmod 0600 "$marker"
