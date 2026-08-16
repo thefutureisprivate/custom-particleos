@@ -256,7 +256,7 @@ require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
 
 require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
-require_fixed "ImageVersion=0.16.17.15" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.16" "$stalwart_service_config"
 require_fixed "Format=disk" "$stalwart_service_config"
 require_fixed "Bootable=no" "$stalwart_service_config"
 require_fixed "SELinuxRelabel=yes" "$stalwart_service_config"
@@ -277,6 +277,8 @@ require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$service_
 require_fixed "CompressOutput=zstd" "$service_obs_config"
 require_fixed "Verity=defer" "$service_obs_config"
 require_fixed "PostOutputScripts=%D/$obs_postoutput" "$service_obs_config"
+require_fixed "PostOutputScripts=%D/mkosi.scripts/remove-first-pass-checksum" \
+    "$stalwart_service_config"
 for repart_definition in \
         mkosi.images/stalwart-service/mkosi.repart/10-root-verity-sig.conf \
         mkosi.images/stalwart-service/mkosi.repart/11-root-verity.conf \
@@ -303,6 +305,7 @@ for metadata_key in \
     require_fixed "$metadata_key=" "$stalwart_service_release"
 done
 require_fixed "STALWART_PACKAGE_RELEASE=15" "$stalwart_service_release"
+require_fixed "IMAGE_VERSION=0.16.17.16" "$stalwart_service_release"
 require_fixed "UPDATE_KIND=patch" "$stalwart_service_release"
 require_fixed "AUTOMATIC_UPDATE=yes" "$stalwart_service_release"
 require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14" "$stalwart_service_release"
