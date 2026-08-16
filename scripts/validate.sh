@@ -141,6 +141,16 @@ if [[ -n "$(extract_stanza Packages mkosi.images/dnsserver/mkosi.conf)" ]]; then
     fail "mkosi.images/dnsserver/mkosi.conf must not select packages while the role is dormant"
 fi
 require_fixed "local Unix-socket-only PostgreSQL instance" mkosi.images/mailserver/mkosi.conf
+mail_packages=$(extract_stanza Packages mkosi.images/mailserver/mkosi.conf)
+for postgresql_pin in postgresql-contrib-18.* postgresql-server-18.*; do
+    grep -Fxq "$postgresql_pin" <<<"$mail_packages" ||
+        fail "mailserver package set does not pin $postgresql_pin"
+done
+for unpinned_postgresql_package in postgresql-contrib postgresql-server; do
+    if grep -Fxq "$unpinned_postgresql_package" <<<"$mail_packages"; then
+        fail "mailserver package set contains unpinned $unpinned_postgresql_package"
+    fi
+done
 require_fixed "Empty placeholder" mkosi.images/dnsserver/mkosi.conf
 if rg -n '^[[:space:]]*(dovecot|dovecot-pigeonhole|postfix|postfix-pcre|dnsdist|unbound)[[:space:]]*$' \
         mkosi.conf mkosi.role.conf mkosi.images mkosi.profiles .obs/fedora/x86-64; then
@@ -350,6 +360,8 @@ require_fixed "UPDATE_KIND=seed" "$stalwart_built_seed_release"
 require_fixed "AUTOMATIC_UPDATE=no" "$stalwart_built_seed_release"
 require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.23" \
     "$stalwart_built_seed_release"
+require_fixed "DATABASE_FORMAT=postgresql-18-stalwart" "$stalwart_service_release"
+require_fixed "DATABASE_FORMAT=postgresql-18-stalwart" "$stalwart_built_seed_release"
 require_fixed 'NAME="ParticleOS Stalwart Service Image"' \
     mkosi.scripts/stalwart-service.postinst.chroot
 require_fixed 'ID=particleos-stalwart' mkosi.scripts/stalwart-service.postinst.chroot
@@ -398,7 +410,9 @@ if ! diff -u \
             extract_stanza Packages mkosi.images/webserver/mkosi.conf
             extract_stanza Packages mkosi.images/mailserver/mkosi.conf
             extract_stanza BuildPackages mkosi.images/mailserver/mkosi.conf
-        } | sed '/^$/d' | sort -u) \
+        } | sed -E \
+            -e '/^$/d' \
+            -e 's/^(postgresql-(contrib|server))-18\.\*$/\1/' | sort -u) \
         <(extract_stanza BuildPackages "$obs_recipe" | sort -u); then
     fail "$obs_recipe BuildPackages= does not equal the selected graph package closure"
 fi
@@ -749,6 +763,7 @@ mail_readme="$mail_extra/usr/share/doc/particleos/stalwart/README"
 postgres_dropin="$mail_extra/usr/lib/systemd/system/postgresql.service.d/40-particleos-hardening.conf"
 postgres_setup_unit="$mail_extra/usr/lib/systemd/system/particleos-postgresql-setup.service"
 postgres_setup="$mail_extra/usr/lib/particleos/postgresql/initialize"
+postgres_major_file="$mail_extra/usr/lib/particleos/postgresql/major-version"
 postgres_conf="$mail_extra/usr/lib/particleos/postgresql/particleos.conf"
 postgres_hba="$mail_extra/usr/lib/particleos/postgresql/pg_hba.conf"
 postgres_archive="$mail_extra/usr/lib/particleos/postgresql/archive-wal"
@@ -846,6 +861,15 @@ require_fixed "executable, allocator libraries, and WebUI run from the signed, r
 require_fixed "/var/lib/particleos/stalwart/current.raw" "$mail_readme"
 reject_fixed "WebUI is a checksum-pinned RPM payload in immutable /usr" "$mail_readme"
 require_fixed "Requires=particleos-postgresql-setup.service" "$postgres_dropin"
+[[ $(<"$postgres_major_file") == 18 ]] ||
+    fail "$postgres_major_file must pin PostgreSQL major 18"
+require_fixed "postgresql-contrib-18.*" mkosi.images/mailserver/mkosi.conf
+require_fixed "postgresql-server-18.*" mkosi.images/mailserver/mkosi.conf
+require_fixed "postgresql-contrib" "$obs_recipe"
+require_fixed "postgresql-server" "$obs_recipe"
+require_fixed "expected_postgresql_major" "$postinst"
+require_fixed "/usr/bin/pg_waldump" "$postinst"
+require_fixed "unsupported PostgreSQL binary version" "$postinst"
 require_fixed "RestrictAddressFamilies=AF_UNIX" "$postgres_dropin"
 require_fixed "IPAddressDeny=any" "$postgres_dropin"
 require_fixed "MemoryDenyWriteExecute=yes" "$postgres_dropin"
@@ -855,6 +879,9 @@ reject_fixed "ConditionPathExists=!/var/lib/pgsql/data/.particleos-initialized" 
 require_fixed "for postgresql_entrypoint in" mkosi.scripts/particleos.postinst.chroot
 require_fixed "postgresql_exec_t:s0" mkosi.scripts/particleos.postinst.chroot
 require_fixed "/usr/bin/initdb" "$postgres_setup"
+require_fixed 'read -r expected_major </usr/lib/particleos/postgresql/major-version' \
+    "$postgres_setup"
+require_fixed 'data_major != "$expected_major"' "$postgres_setup"
 require_fixed "--data-checksums" "$postgres_setup"
 require_fixed "--auth-local=peer" "$postgres_setup"
 require_fixed "--auth-host=reject" "$postgres_setup"
@@ -901,7 +928,7 @@ require_fixed "ExecStart=/usr/lib/particleos/postgresql/basebackup" "$postgres_p
 require_fixed "ExecStart=/usr/lib/particleos/postgresql/basebackup" "$postgres_basebackup_unit"
 require_fixed "OnCalendar=weekly" "$postgres_basebackup_timer"
 require_fixed "d /var/lib/pgsql/backup 0700 postgres postgres -" "$postgres_tmpfiles"
-require_fixed "postgresql-contrib" mkosi.images/mailserver/mkosi.conf
+require_fixed "postgresql-contrib-18.*" mkosi.images/mailserver/mkosi.conf
 require_fixed "postgresql-contrib" "$obs_recipe"
 require_fixed "zstd" "$obs_recipe"
 require_fixed "zstd" mkosi.images/mailserver/mkosi.conf
@@ -1121,6 +1148,8 @@ require_fixed "User=stalwart" "$mail_health_unit"
 require_fixed "IPAddressAllow=localhost" "$mail_health_unit"
 require_fixed "IPAddressDeny=any" "$mail_health_unit"
 require_fixed "--host=/run/postgresql --username=stalwart --dbname=stalwart" "$mail_health_check"
+require_fixed "/usr/lib/particleos/postgresql/major-version" "$mail_health_check"
+require_fixed "server_version_num" "$mail_health_check"
 reject_fixed "query cloudflare.com" "$mail_health_check"
 require_fixed "query localhost" "$mail_health_check"
 require_fixed "readonly LISTENER_ABSENT=10" "$mail_health_check"

@@ -215,12 +215,19 @@ webui_check() {
 health_tmp=$(/usr/bin/mktemp --directory)
 trap 'rm -rf --one-file-system -- "$health_tmp"' EXIT
 
+read -r expected_postgresql_major \
+    </usr/lib/particleos/postgresql/major-version
+[[ $expected_postgresql_major =~ ^[0-9]+$ ]] ||
+    fail "$DATASTORE_FAILURE" 'datastore failure: invalid supported PostgreSQL major'
+
 database_ready=false
 for ((attempt = 0; attempt < 30; attempt++)); do
     result=$(/usr/bin/psql --no-password --no-psqlrc \
         --host=/run/postgresql --username=stalwart --dbname=stalwart \
-        --tuples-only --no-align --command='SELECT 1' 2>/dev/null || true)
-    if [[ $result == 1 ]]; then
+        --tuples-only --no-align \
+        --command="SELECT current_setting('server_version_num')::integer / 10000" \
+        2>/dev/null || true)
+    if [[ $result == "$expected_postgresql_major" ]]; then
         database_ready=true
         break
     fi
@@ -228,7 +235,7 @@ for ((attempt = 0; attempt < 30; attempt++)); do
 done
 [[ $database_ready == true ]] ||
     fail "$DATASTORE_FAILURE" \
-        'datastore failure: Stalwart peer authentication or SELECT failed'
+        'datastore failure: peer authentication, query, or PostgreSQL major check failed'
 
 # Boot success depends only on the local resolver contract. External DNS and
 # Cloudflare DoT availability are runtime dependencies with normal mail retry

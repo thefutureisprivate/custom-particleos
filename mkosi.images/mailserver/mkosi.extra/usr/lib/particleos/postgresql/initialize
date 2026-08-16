@@ -8,8 +8,16 @@ trap '_particleos_init_status=$?; printf "ParticleOS PostgreSQL initialization f
 
 pgdata=/var/lib/pgsql/data
 marker=$pgdata/.particleos-initialized
+read -r expected_major </usr/lib/particleos/postgresql/major-version
+[[ $expected_major =~ ^[0-9]+$ ]]
 
-if [[ ! -f $pgdata/PG_VERSION ]]; then
+if [[ -f $pgdata/PG_VERSION ]]; then
+    read -r data_major <"$pgdata/PG_VERSION"
+    if [[ $data_major != "$expected_major" ]]; then
+        echo "PostgreSQL data major $data_major is incompatible with supported major $expected_major" >&2
+        exit 1
+    fi
+else
     # Run initdb directly as the service's unprivileged postgres user. Fedora's
     # postgresql-setup wrapper also loads upgrade metadata which is not needed
     # for first-boot setup.
@@ -20,7 +28,8 @@ if [[ ! -f $pgdata/PG_VERSION ]]; then
         --auth-host=reject
 fi
 
-[[ -f $pgdata/PG_VERSION ]]
+read -r data_major <"$pgdata/PG_VERSION"
+[[ $data_major == "$expected_major" ]]
 
 # PostgreSQL includes this file from the generated main configuration. Keep the
 # network boundary in an independently auditable, appliance-owned fragment.

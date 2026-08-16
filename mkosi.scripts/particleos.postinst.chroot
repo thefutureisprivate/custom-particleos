@@ -23,6 +23,28 @@ for current_systemd_unit in \
     [[ -f "/usr/lib/systemd/system/$current_systemd_unit" ]]
 done
 
+# PostgreSQL's on-disk format is major-version specific. Keep Fedora's 18.x
+# security updates, but make a repository transition to 19 fail the image
+# build instead of publishing an OS which cannot start the persistent cluster.
+if [[ $IMAGE_ID == ParticleOS-Mailserver ]]; then
+    read -r expected_postgresql_major \
+        </usr/lib/particleos/postgresql/major-version
+    [[ $expected_postgresql_major =~ ^[0-9]+$ ]]
+
+    for postgresql_binary in \
+        /usr/bin/initdb \
+        /usr/bin/pg_basebackup \
+        /usr/bin/pg_waldump \
+        /usr/bin/postgres \
+        /usr/bin/psql; do
+        postgresql_version=$("$postgresql_binary" --version)
+        if [[ $postgresql_version != *" (PostgreSQL) $expected_postgresql_major."* ]]; then
+            echo "unsupported PostgreSQL binary version: $postgresql_version" >&2
+            exit 1
+        fi
+    done
+fi
+
 # systemd-pull verifies OBS's signed SHA256SUMS with this exclusive project
 # key. Its gpg --keyring interface requires the binary OpenPGP form, so dearmor
 # the pinned repository key before mkosi's SELinux relabel pass and replace the

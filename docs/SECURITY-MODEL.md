@@ -431,6 +431,12 @@ verified `pg_basebackup` plus continuous WAL on a separately mounted,
 encrypted, `postgresql_db_t`-labelled filesystem. Once activated, loss of that
 mount makes archiving fail and retains WAL locally. Automated retention is
 intentionally absent so no WAL required by a retained base backup is deleted.
+The host package specifications accept PostgreSQL 18 patch releases only.
+Image construction verifies every installed server, client, backup, and WAL
+tool against that major, boot verifies the persistent cluster's `PG_VERSION`,
+and the mail health gate verifies the live server major. PostgreSQL 19 or later
+therefore requires an explicit database-aware migration and rollback design;
+it cannot enter an ordinary OS update accidentally.
 
 Configuration under `/usr/lib/particleos` changes only through a new signed
 image. Certbot state and TLS private keys are owned by the non-login `certbot`
