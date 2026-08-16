@@ -9,6 +9,27 @@ test "$(stat --format=%C "$BUILDROOT/usr/bin/stalwart")" = \
 test "$(stat --format=%C "$BUILDROOT/usr/share/stalwart/webui.zip")" = \
     system_u:object_r:stalwart_etc_t:s0
 
+# The package manager and SELinux tooling are build inputs, not application
+# runtime APIs. PID 1 needs cat to inspect signed release metadata and the unit
+# needs cp to publish immutable WebUI digests; Stalwart is the only other
+# command retained in the sealed service image.
+find "$BUILDROOT/usr/bin" -mindepth 1 -maxdepth 1 \
+    ! -name cat ! -name cp ! -name stalwart -delete
+for build_only_tree in \
+        "$BUILDROOT/etc/selinux" \
+        "$BUILDROOT/usr/lib/systemd" \
+        "$BUILDROOT/usr/lib/sysusers.d" \
+        "$BUILDROOT/usr/lib/tmpfiles.d" \
+        "$BUILDROOT/usr/libexec" \
+        "$BUILDROOT/usr/sbin" \
+        "$BUILDROOT/usr/share/selinux" \
+        "$BUILDROOT/var/lib/selinux"; do
+    [[ ! -e $build_only_tree ]] || find "$build_only_tree" -depth -delete
+done
+for runtime_command in cat cp stalwart; do
+    test -x "$BUILDROOT/usr/bin/$runtime_command"
+done
+
 # No executable in the service DDI needs a set-ID transition. The allocator's
 # non-executable loader metadata is intentionally unaffected.
 find "$BUILDROOT" -xdev -type f -perm /6000 -perm /0111 \
