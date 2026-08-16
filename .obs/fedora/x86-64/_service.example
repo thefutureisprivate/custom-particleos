@@ -18,6 +18,6 @@
   <service name="verify_file">
     <param name="file">_service:download_url:ParticleOS-Stalwart_0.16.17.14_x86-64.raw.zst</param>
     <param name="verifier">sha256</param>
-    <param name="checksum">376379bfcac8d641279c9653cb1ba46419c67af37e174bd43402f3a066ed0184</param>
+    <param name="checksum">2ae905d10c02e661f5c4a94c6ebbb522e0f023240b8157fbc3819ef97f94e4cf</param>
   </service>
 </services>
