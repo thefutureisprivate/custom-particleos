@@ -19,7 +19,11 @@ therefore never unlink `current.raw`, `previous.raw`, or their protected image
 files. Acquisition does not select an image. The image manager then
 mounts it through a transient `RootImage=` unit so PID 1 verifies its embedded
 signature and dm-verity tree before the release metadata can be read, and only
-then copies the candidate into the protected image store for selection.
+then copies the candidate into the protected image store for selection. A
+dedicated `stalwart_image_manager_t` SELinux domain is the only userspace
+domain allowed to write that store. Promotion fails closed unless the new file
+inherits the exact `stalwart_image_t` label; the capability-free service never
+changes ownership or relabels files at runtime.
 
 Automatic activation is allowed only when every condition below is explicit
 in the signed metadata:

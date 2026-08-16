@@ -172,6 +172,14 @@ case "$IMAGE_ID" in
         ;;
 esac
 
+# The initrd may assign its own distribution fallback before switch-root, at
+# which point PID 1 deliberately preserves the already configured kernel
+# hostname instead of consulting the final OS's DEFAULT_HOSTNAME. Seed the
+# writable root with the role pattern as well. systemd expands each question
+# mark from the machine ID on first boot; later hostnamectl changes persist
+# across atomic OS updates because /etc is outside the immutable /usr slot.
+printf '%s\n' "$particleos_hostname" >/etc/hostname
+
 # Give the image a distinct OS identity without changing Fedora's package
 # identity. mkosi writes IMAGE_ID and IMAGE_VERSION after this script and the
 # finalizer verifies them before the tree is sealed.

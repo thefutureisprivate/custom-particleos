@@ -256,7 +256,7 @@ require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
 
 require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_service_config"
-require_fixed "ImageVersion=0.16.17.16" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.17" "$stalwart_service_config"
 require_fixed "Format=disk" "$stalwart_service_config"
 require_fixed "Bootable=no" "$stalwart_service_config"
 reject_fixed "ElTorito=" "$stalwart_service_config"
@@ -305,11 +305,12 @@ for metadata_key in \
         AUTOMATIC_UPDATE ROLLBACK_COMPATIBLE_FROM; do
     require_fixed "$metadata_key=" "$stalwart_service_release"
 done
-require_fixed "STALWART_PACKAGE_RELEASE=15" "$stalwart_service_release"
-require_fixed "IMAGE_VERSION=0.16.17.16" "$stalwart_service_release"
+require_fixed "STALWART_PACKAGE_RELEASE=16" "$stalwart_service_release"
+require_fixed "IMAGE_VERSION=0.16.17.17" "$stalwart_service_release"
 require_fixed "UPDATE_KIND=patch" "$stalwart_service_release"
 require_fixed "AUTOMATIC_UPDATE=yes" "$stalwart_service_release"
-require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14" "$stalwart_service_release"
+require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14:0.16.17.16" \
+    "$stalwart_service_release"
 require_fixed 'NAME="ParticleOS Stalwart Service Image"' \
     mkosi.scripts/stalwart-service.postinst.chroot
 require_fixed 'ID=particleos-stalwart' mkosi.scripts/stalwart-service.postinst.chroot
@@ -793,6 +794,12 @@ require_fixed "readonly staging_dir=" "$stalwart_image_manager"
 require_fixed "import_staged_image" "$stalwart_image_manager"
 require_fixed "discarded invalid staged image" "$stalwart_image_manager"
 require_fixed 'inspect_image "$destination" release' "$stalwart_image_manager"
+require_fixed "managed service image has the wrong SELinux label" \
+    "$stalwart_image_manager"
+require_fixed "temporary image did not inherit the protected SELinux label" \
+    "$stalwart_image_manager"
+reject_fixed "chown root:root" "$stalwart_image_manager"
+reject_fixed "restorecon" "$stalwart_image_manager"
 require_fixed '((${#staged_images[@]} > 0)) || return' "$stalwart_image_manager"
 require_fixed "resolve_optional_link" "$stalwart_image_manager"
 reject_fixed "resolve_link current.raw 2>/dev/null || true" "$stalwart_image_manager"
@@ -814,6 +821,7 @@ require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager initialize" 
     "$stalwart_image_setup_unit"
 require_fixed "RequiresMountsFor=/var/lib/particleos/stalwart" \
     "$stalwart_image_setup_unit"
+require_fixed "CapabilityBoundingSet=" "$stalwart_image_setup_unit"
 require_fixed "ExecStart=/usr/lib/particleos/stalwart/image-manager update" \
     "$stalwart_update_unit"
 require_fixed "NFTSet=cgroup:inet:particleos_filter:sysupdate_cgroups" \
@@ -838,6 +846,9 @@ require_fixed "d /var/lib/particleos/stalwart/images 0700 root root -" \
 require_fixed "d /var/lib/particleos/stalwart/staging 0700 root root -" \
     "$stalwart_image_tmpfiles"
 require_fixed "OS A/B updates and rollbacks never" "$stalwart_image_readme"
+require_fixed "stalwart_image_manager_t" "$stalwart_image_readme"
+require_fixed 'printf '\''%s\n'\'' "$particleos_hostname" >/etc/hostname' \
+    mkosi.scripts/particleos.postinst.chroot
 require_fixed "UPDATE_KIND=patch" "$stalwart_image_readme"
 require_fixed "database-aware migration" "$stalwart_image_readme"
 require_fixed "meta skuid systemd-resolve ip daddr { 1.1.1.1, 1.0.0.1 } tcp dport 853 accept" "$base_firewall"

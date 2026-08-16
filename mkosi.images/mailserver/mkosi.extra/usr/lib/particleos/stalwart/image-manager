@@ -70,6 +70,52 @@ validate_image_file() {
     (((8#$mode & 022) == 0)) || die "service image is group/world writable: $image"
 }
 
+managed_image_label_is_valid() {
+    local image=$1
+    [[ $(stat --format=%C "$image") == system_u:object_r:stalwart_image_t:s0 ]]
+}
+
+validate_managed_image_file() {
+    local image=$1
+
+    validate_image_file "$image"
+    managed_image_label_is_valid "$image" ||
+        die "managed service image has the wrong SELinux label: $image"
+}
+
+promote_image() {
+    local source=$1
+    local destination=$2
+    local description=$3
+    local temporary
+
+    temporary=$(mktemp --tmpdir="$images_dir" ".${destination##*/}.XXXXXXXX") ||
+        die "failed to create a temporary managed image: $description"
+    if ! cp --reflink=auto --sparse=always -- "$source" "$temporary"; then
+        rm -f -- "$temporary"
+        die "failed to copy image into the protected store: $description"
+    fi
+    if ! chmod 0444 "$temporary"; then
+        rm -f -- "$temporary"
+        die "failed to set managed-image mode: $description"
+    fi
+    if ! managed_image_label_is_valid "$temporary"; then
+        rm -f -- "$temporary"
+        die "temporary image did not inherit the protected SELinux label: $description"
+    fi
+    if ! mv -T -- "$temporary" "$destination"; then
+        rm -f -- "$temporary"
+        die "failed to publish managed image: $description"
+    fi
+    if ! managed_image_label_is_valid "$destination"; then
+        rm -f -- "$destination"
+        sync -d "$images_dir"
+        die "published image has the wrong SELinux label: $description"
+    fi
+    sync -d "$destination"
+    sync -d "$images_dir"
+}
+
 inspect_image() {
     local image=$1
     local output_name=$2
@@ -239,6 +285,7 @@ resolve_link() {
         die "unsafe $link service-image link: $target"
     [[ -f $state_dir/$target && ! -L $state_dir/$target ]] ||
         die "$link service-image target is missing: $target"
+    validate_managed_image_file "$state_dir/$target"
     printf '%s' "$state_dir/$target"
 }
 
@@ -303,7 +350,7 @@ select_seed() {
 }
 
 initialize_image() {
-    local current seed destination temporary
+    local current seed destination
     declare -A release=()
 
     mkdir -p "$images_dir" "$staging_dir"
@@ -323,14 +370,7 @@ initialize_image() {
     [[ ${release[UPDATE_KIND]} == seed ]] || die 'initial application image is not marked as a seed'
 
     destination=$images_dir/${seed##*/}
-    temporary=$images_dir/.${seed##*/}.$$
-    cp --reflink=auto --sparse=always -- "$seed" "$temporary"
-    chown root:root "$temporary"
-    chmod 0444 "$temporary"
-    mv -T -- "$temporary" "$destination"
-    /usr/sbin/restorecon -F "$destination"
-    sync -d "$destination"
-    sync -d "$images_dir"
+    promote_image "$seed" "$destination" "${seed##*/}"
     # Re-open the persistent copy through PID 1 before selecting it. This
     # catches a failed or corrupted copy without persisting an unusable link
     # across OS A/B rollback attempts.
@@ -344,7 +384,6 @@ initialize_image() {
 import_staged_image() {
     local staged=$1
     local destination=$images_dir/${staged##*/}
-    local temporary=$images_dir/.${staged##*/}.$$
     local staged_digest destination_digest validation_error
 
     [[ ${staged%/*} == "$staging_dir" ]] ||
@@ -365,40 +404,22 @@ import_staged_image() {
     fi
 
     if [[ -e $destination || -L $destination ]]; then
-        validate_image_file "$destination"
+        validate_managed_image_file "$destination"
         staged_digest=$(sha256sum "$staged")
         staged_digest=${staged_digest%% *}
         destination_digest=$(sha256sum "$destination")
         destination_digest=${destination_digest%% *}
         [[ $staged_digest == "$destination_digest" ]] ||
             die "staged image collides with a different managed image: ${staged##*/}"
+        rm -f -- "$staged"
+        sync -d "$staging_dir"
         printf '%s' "$destination"
         return
     fi
 
-    cp --reflink=auto --sparse=always -- "$staged" "$temporary" || {
-        rm -f -- "$temporary"
-        die "failed to copy staged image into the protected store: ${staged##*/}"
-    }
-    chown root:root "$temporary" || {
-        rm -f -- "$temporary"
-        die "failed to set staged-image ownership: ${staged##*/}"
-    }
-    chmod 0444 "$temporary" || {
-        rm -f -- "$temporary"
-        die "failed to set staged-image mode: ${staged##*/}"
-    }
-    mv -T -- "$temporary" "$destination" || {
-        rm -f -- "$temporary"
-        die "failed to publish staged image: ${staged##*/}"
-    }
-    if ! /usr/sbin/restorecon -F "$destination"; then
-        rm -f -- "$destination"
-        sync -d "$images_dir"
-        die "failed to label staged image: ${staged##*/}"
-    fi
-    sync -d "$destination"
-    sync -d "$images_dir"
+    promote_image "$staged" "$destination" "${staged##*/}"
+    rm -f -- "$staged"
+    sync -d "$staging_dir"
     printf '%s' "$destination"
 }
 

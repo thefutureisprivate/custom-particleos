@@ -292,6 +292,11 @@ as an SELinux-labelled directory inside the TPM2/LUKS-encrypted writable root.
 The account is added to `wheel` and `systemd-journal`; no fixed account or
 password is built into the image.
 
+The first writable root receives a stable role-specific hostname derived from
+the machine ID (`particle-web-…` or `particle-mail-…`). An administrator may
+replace it with `hostnamectl`; that local setting persists across OS A/B
+updates and rollbacks.
+
 Use `run0` for privileged operations:
 
 ```sh
