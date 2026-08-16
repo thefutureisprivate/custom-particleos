@@ -34,6 +34,11 @@ in the signed metadata:
 - `DATABASE_MIGRATION=none`, with unchanged database format and schema;
 - `ROLLBACK_COMPATIBLE_FROM` names the exact selected image version.
 
+The RPM embeds its authoritative Stalwart version and package release. The
+service-image build compares that record with the signed compatibility
+metadata and fails if an OBS dependency rebuild would combine mismatched
+runtime and release declarations.
+
 Minor/major releases, schema changes, and any migration marker are rejected.
 They must not be relabelled as compatible: first implement and review a
 database-aware migration and rollback procedure using the PITR facilities in

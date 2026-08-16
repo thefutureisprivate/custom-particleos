@@ -7,8 +7,16 @@ test "$(id -g stalwart)" = 993
 test -x /usr/bin/stalwart
 test -r /usr/share/stalwart/webui.zip
 test -r /usr/lib/particleos/stalwart/release
+test -r /usr/lib/stalwart/package-release
 test -r /usr/lib64/libhardened_malloc.so
 test -r /usr/lib64/libno_rlimit_as.so
+
+# OBS rebuilds on dependency changes. Do not allow a newer runtime RPM to be
+# sealed under stale signed compatibility metadata from an older image recipe.
+cmp -s \
+    <(grep -E '^(STALWART_VERSION|STALWART_PACKAGE_RELEASE)=' \
+        /usr/lib/particleos/stalwart/release) \
+    /usr/lib/stalwart/package-release
 
 # The service image needs the executable and application content labels, while
 # the host loads the same policy module before PID 1 mounts this DDI.
