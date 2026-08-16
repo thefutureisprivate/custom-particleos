@@ -3,6 +3,12 @@
 ; systemd-sysupdate executes systemd-pull directly for URL transfers. Keep the
 ; image manager itself networkless and transition only Fedora's labelled pull
 ; helper into the existing confined systemd_importd_t domain.
+(type particleos_stalwart_managed_unit_t)
+(roletype .object_r particleos_stalwart_managed_unit_t)
+(typeattributeset .file_type (particleos_stalwart_managed_unit_t))
+(typeattributeset .systemd_unit_file_type
+  (particleos_stalwart_managed_unit_t))
+
 (block particleos_stalwart_pull
   (allow .stalwart_image_manager_t .systemd_importd_exec_t
     (file (getattr open map read execute ioctl)))
@@ -14,4 +20,20 @@
   ; particleos-stalwart-update.service sets both hardening properties. Permit
   ; the domain transition without weakening either service-level restriction.
   (allow .stalwart_image_manager_t .systemd_importd_t
-    (process2 (nnp_transition nosuid_transition))))
+    (process2 (nnp_transition nosuid_transition)))
+
+  ; The pull helper and system bus return bounded command output through pipes
+  ; created by the manager. Neither domain receives access to manager files.
+  (allow .systemd_importd_t .stalwart_image_manager_t
+    (fifo_file (getattr write)))
+  (allow .system_dbusd_t .stalwart_image_manager_t
+    (fifo_file (write)))
+
+  ; Like protected images, staging images are opened read-only after systemd's
+  ; expected writable probe. Keep that probe denied without audit noise.
+  (dontaudit .init_t .stalwart_image_staging_t (file (write)))
+
+  ; Activation may restart and observe only Stalwart and its health probe. The
+  ; build labels precisely those two unit files with this dedicated type.
+  (allow .stalwart_image_manager_t .particleos_stalwart_managed_unit_t
+    (service (start status))))

@@ -107,6 +107,25 @@ if [[ $IMAGE_ID == ParticleOS-Mailserver ]]; then
             printf '%s\n' "$postgresql_entrypoint_context" >>"$selinux_local_contexts"
         fi
     done
+
+    # systemd-pull reads this immutable public verification key in its confined
+    # importd domain. Override the broad /usr/lib/systemd executable label with
+    # Fedora's systemd configuration type.
+    stalwart_import_key_context='/usr/lib/systemd/import-pubring\.pgp -- system_u:object_r:systemd_conf_t:s0'
+    if ! grep -Fqx "$stalwart_import_key_context" "$selinux_local_contexts"; then
+        printf '%s\n' "$stalwart_import_key_context" >>"$selinux_local_contexts"
+    fi
+
+    # The image manager may start and observe exactly the application service
+    # and its bounded health probe, not arbitrary system units.
+    for stalwart_managed_unit in \
+        stalwart \
+        particleos-mailserver-health; do
+        stalwart_managed_unit_context="/usr/lib/systemd/system/$stalwart_managed_unit\\.service -- system_u:object_r:particleos_stalwart_managed_unit_t:s0"
+        if ! grep -Fqx "$stalwart_managed_unit_context" "$selinux_local_contexts"; then
+            printf '%s\n' "$stalwart_managed_unit_context" >>"$selinux_local_contexts"
+        fi
+    done
 fi
 selinux_factory_link_context='/etc/selinux -l system_u:object_r:etc_t:s0'
 if ! grep -Fqx "$selinux_factory_link_context" "$selinux_local_contexts"; then

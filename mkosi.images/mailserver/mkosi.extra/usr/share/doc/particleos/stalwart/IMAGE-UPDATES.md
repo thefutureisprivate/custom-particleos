@@ -30,6 +30,9 @@ changes ownership or relabels files at runtime. The manager remains
 networkless: systemd-sysupdate's labelled `systemd-pull` child alone
 transitions into Fedora's confined `systemd_importd_t` domain, and the
 unit-cgroup nftables allow-list covers that descendant's bounded HTTPS access.
+The immutable OBS public keyring carries Fedora's systemd-configuration label.
+Activation is authorized to start and observe only the separately labelled
+Stalwart and mail-health units, not arbitrary system services.
 
 Automatic activation is allowed only when every condition below is explicit
 in the signed metadata:

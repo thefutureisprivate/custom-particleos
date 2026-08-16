@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 [Unit]
-Description=Verify the ParticleOS mailserver before blessing this boot
+Description=Verify ParticleOS mailserver health
 Documentation=man:systemd-bless-boot.service(8)
 Documentation=file:/usr/share/doc/particleos/stalwart/README
 Requires=systemd-resolved.service postgresql.service particleos-stalwart-database.service stalwart.service
 After=systemd-resolved.service postgresql.service particleos-stalwart-database.service stalwart.service
-Before=systemd-boot-check-no-failures.service boot-complete.target
+Before=multi-user.target systemd-boot-check-no-failures.service boot-complete.target
 
 [Service]
 Type=oneshot
@@ -42,4 +42,4 @@ SystemCallFilter=~@privileged @resources
 UMask=0077
 
 [Install]
-RequiredBy=boot-complete.target
+RequiredBy=multi-user.target boot-complete.target

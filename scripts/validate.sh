@@ -834,6 +834,18 @@ require_fixed "(typetransition .stalwart_image_manager_t .systemd_importd_exec_t
     "$stalwart_pull_policy"
 require_fixed "(process2 (nnp_transition nosuid_transition))" \
     "$stalwart_pull_policy"
+require_fixed "(type particleos_stalwart_managed_unit_t)" "$stalwart_pull_policy"
+require_fixed ".systemd_unit_file_type" "$stalwart_pull_policy"
+require_fixed ".systemd_importd_t .stalwart_image_manager_t" \
+    "$stalwart_pull_policy"
+require_fixed "(fifo_file (getattr write))" "$stalwart_pull_policy"
+require_fixed ".system_dbusd_t .stalwart_image_manager_t" \
+    "$stalwart_pull_policy"
+require_fixed "(dontaudit .init_t .stalwart_image_staging_t (file (write)))" \
+    "$stalwart_pull_policy"
+require_fixed ".stalwart_image_manager_t .particleos_stalwart_managed_unit_t" \
+    "$stalwart_pull_policy"
+require_fixed "(service (start status))" "$stalwart_pull_policy"
 if rg -n '(\.stalwart_image_manager_t.*tcp_socket|tcp_socket.*\.stalwart_image_manager_t)' \
         "$stalwart_pull_policy"; then
     fail "the Stalwart image-manager domain must not receive direct TCP access"
@@ -850,6 +862,9 @@ require_fixed "systemd-run --quiet --wait --pipe --collect" "$stalwart_image_man
 require_fixed "systemd-sysupdate --component=stalwart --json=short check-new" \
     "$stalwart_image_manager"
 require_fixed "systemd-sysupdate --component=stalwart update" "$stalwart_image_manager"
+require_fixed 'for image in "${staged_images[@]}"; do' "$stalwart_image_manager"
+require_fixed 'candidate_version=$image_version' "$stalwart_image_manager"
+reject_fixed 'done < <(' "$stalwart_image_manager"
 require_fixed "'{\"available\":null}'" "$stalwart_image_manager"
 require_fixed "availability_status == 0 || availability_status == 1" \
     "$stalwart_image_manager"
@@ -917,6 +932,11 @@ require_fixed "stalwart_image_manager_t" "$stalwart_image_readme"
 require_fixed 'transitions into Fedora'"'"'s confined `systemd_importd_t` domain' \
     "$stalwart_image_readme"
 require_fixed "sysupdate's installed" "$stalwart_image_readme"
+require_fixed "only the separately labelled" "$stalwart_image_readme"
+require_fixed '/usr/lib/systemd/import-pubring\.pgp -- system_u:object_r:systemd_conf_t:s0' \
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed 'particleos_stalwart_managed_unit_t:s0' \
+    mkosi.scripts/particleos.postinst.chroot
 require_fixed 'printf '\''%s\n'\'' "$particleos_hostname" >/etc/hostname' \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed "C /etc/hostname 0644 root root - /usr/share/factory/etc/hostname" \
@@ -974,10 +994,10 @@ require_fixed 'if [[ $IMAGE_ID == ParticleOS-Webserver ]]' \
 require_fixed ".init_t .http_port_t (tcp_socket (name_connect))" \
     "$web_health_policy"
 require_fixed "Requires=systemd-resolved.service postgresql.service particleos-stalwart-database.service stalwart.service" "$mail_health_unit"
-require_fixed "Before=systemd-boot-check-no-failures.service boot-complete.target" "$mail_health_unit"
+require_fixed "Before=multi-user.target systemd-boot-check-no-failures.service boot-complete.target" "$mail_health_unit"
 reject_fixed "FailureAction=" "$mail_health_unit"
 reject_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath" "$mail_health_unit"
-require_fixed "RequiredBy=boot-complete.target" "$mail_health_unit"
+require_fixed "RequiredBy=multi-user.target boot-complete.target" "$mail_health_unit"
 require_fixed "User=stalwart" "$mail_health_unit"
 require_fixed "IPAddressAllow=localhost" "$mail_health_unit"
 require_fixed "IPAddressDeny=any" "$mail_health_unit"

@@ -485,7 +485,7 @@ activate_image() {
 }
 
 update_image() {
-    local availability availability_status current blocked candidate='' managed_candidate current_version image_version
+    local availability availability_status current blocked candidate='' candidate_version='' managed_candidate current_version image_version
     local staged_images=()
     local image
 
@@ -514,12 +514,15 @@ update_image() {
     # A successful no-op is normal while no release newer than the embedded
     # seed has been published. Keep the daily timer quiet in that state.
     ((${#staged_images[@]} > 0)) || return
-    while IFS= read -r image; do
+    for image in "${staged_images[@]}"; do
         image_version=$(version_from_path "$image")
-        if systemd-analyze compare-versions "$image_version" gt "$current_version"; then
+        if systemd-analyze compare-versions "$image_version" gt "$current_version" &&
+                { [[ -z $candidate_version ]] ||
+                    systemd-analyze compare-versions "$image_version" gt "$candidate_version"; }; then
             candidate=$image
+            candidate_version=$image_version
         fi
-    done < <(printf '%s\n' "${staged_images[@]}" | sort -V)
+    done
     [[ -n $candidate ]] || return
     [[ -n $blocked && ${candidate##*/} == "${blocked##*/}" ]] && return
     managed_candidate=$(import_staged_image "$candidate")
