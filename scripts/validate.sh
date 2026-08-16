@@ -1163,6 +1163,14 @@ require_fixed "/usr/lib/particleos/selinux/particleos_pcr_measurement.cil" \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed ".systemd_pcrextend_t .udev_var_run_t (file (getattr open read))" \
     "$pcr_measurement_policy"
+require_fixed ".init_t .loop_control_device_t (chr_file (getattr ioctl lock open read write))" \
+    "$pcr_measurement_policy"
+require_fixed ".init_t .systemd_pcrextend_t (unix_stream_socket (connectto))" \
+    "$pcr_measurement_policy"
+require_fixed ".systemd_pcrextend_t .init_var_run_t (dir (read))" \
+    "$pcr_measurement_policy"
+require_fixed "d /run/systemd/nvpcr 0755 root root -" \
+    mkosi.extra/usr/lib/tmpfiles.d/particleos-pcr-measurement.conf
 require_fixed "alg_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_alg_sockets.cil
 require_fixed "key_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil
 require_fixed "netlink_xfrm_socket" mkosi.extra/usr/lib/particleos/selinux/secureblue_deny_ipsec_sockets.cil

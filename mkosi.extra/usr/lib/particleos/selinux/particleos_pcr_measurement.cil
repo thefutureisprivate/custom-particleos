@@ -4,4 +4,15 @@
 ; runtime database. Permit only reading that device metadata; the service does
 ; not receive write access to udev state.
 (block particleos_pcr_measurement
-  (allow .systemd_pcrextend_t .udev_var_run_t (file (getattr open read))))
+  (allow .systemd_pcrextend_t .udev_var_run_t (file (getattr open read)))
+
+  ; PID 1 attaches signed read-only RootImage= DDIs through /dev/loop-control
+  ; and delegates their measurement to systemd-pcrextend. Keep access scoped
+  ; to the control node and the existing measurement socket domain.
+  (allow .init_t .loop_control_device_t (chr_file (getattr ioctl lock open read write)))
+  (allow .init_t .systemd_pcrextend_t (unix_stream_socket (connectto)))
+
+  ; tmpfiles creates /run/systemd/nvpcr before service-image setup. The PCR
+  ; helper may enumerate that directory but cannot create arbitrary runtime
+  ; state below /run/systemd.
+  (allow .systemd_pcrextend_t .init_var_run_t (dir (read))))
