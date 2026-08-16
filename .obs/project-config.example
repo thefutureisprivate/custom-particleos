@@ -1,0 +1,13 @@
+%if "%_repository" == "fedora_44_images"
+Type: mkosi
+Repotype: checksumsfile:rawsig staticlinks
+Patterntype: none
+FileProvides: /usr/sbin/useradd shadow-utils
+%endif
+
+%if "%_repository" == "stalwart_images"
+Type: mkosi
+Repotype: checksumsfile:rawsig staticlinks
+Patterntype: none
+FileProvides: /usr/sbin/useradd shadow-utils
+%endif

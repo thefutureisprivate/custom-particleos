@@ -234,7 +234,7 @@ require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$stalwart_service_template"
 require_fixed ".obs/stalwart-image/x86-64/mkosi.conf" "$stalwart_service_template"
 require_fixed ".obs/stalwart-image/x86-64/stalwart-image.build" \
     "$stalwart_service_template"
-require_fixed '<enable repository="stalwart_images" arch="x86_64"/>' \
+require_fixed '<enable repository="stalwart_images"/>' \
     .obs/stalwart-image-meta.example.xml
 require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
@@ -430,6 +430,13 @@ require_fixed '<path project="Fedora:44" repository="update"/>' .obs/project-met
 require_fixed '<path project="system:systemd" repository="Fedora_44"/>' .obs/project-meta.example.xml
 require_fixed '<repository name="particleos_base_Fedora_44">' .obs/project-meta.example.xml
 require_fixed '<repository name="stalwart_images">' .obs/project-meta.example.xml
+for image_repository in fedora_44_images stalwart_images; do
+    require_fixed "%_repository\" == \"$image_repository" .obs/project-config.example
+done
+if [[ $(grep -c '^Type: mkosi$' .obs/project-config.example) -ne 2 ]]; then
+    fail ".obs/project-config.example must select mkosi for both image repositories"
+fi
+require_fixed "Repotype: checksumsfile:rawsig staticlinks" .obs/project-config.example
 require_fixed '<path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>' \
     .obs/project-meta.example.xml
 require_fixed '<path project="home:thefutureisprivate" repository="stalwart_Fedora_44"/>' \

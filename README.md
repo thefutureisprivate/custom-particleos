@@ -116,12 +116,9 @@ and its
    [`home:thefutureisprivate`](https://build.opensuse.org/repositories/home:thefutureisprivate)
    OBS project.
 
-2. Add these lines to the OBS project configuration:
-
-   ```text
-   Type: mkosi
-   Repotype: checksumsfile:rawsig staticlinks
-   ```
+2. Apply [`.obs/project-config.example`](./.obs/project-config.example) as the
+   OBS project configuration. It selects the mkosi build type and signed raw
+   checksum repository format for both OS and Stalwart application images.
 
 3. Copy the generic [`_service`
    template](./.obs/fedora/x86-64/_service.example) into that OBS

@@ -29,6 +29,7 @@
     <path project="openSUSE:Tools" repository="Fedora_44"/>
     <path project="home:thefutureisprivate" repository="stalwart_Fedora_44"/>
     <path project="home:thefutureisprivate" repository="particleos_base_Fedora_44"/>
+    <path project="home:thefutureisprivate" repository="Fedora_44"/>
     <path project="system:systemd" repository="Fedora_44"/>
     <path project="Fedora:44" repository="update"/>
     <arch>x86_64</arch>

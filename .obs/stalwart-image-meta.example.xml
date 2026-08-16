@@ -3,6 +3,6 @@
   <description>Signed dm-verity Stalwart systemd RootImage built from the custom RPM.</description>
   <build>
     <disable/>
-    <enable repository="stalwart_images" arch="x86_64"/>
+    <enable repository="stalwart_images"/>
   </build>
 </package>
