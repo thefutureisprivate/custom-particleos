@@ -1,7 +1,9 @@
 ; SPDX-License-Identifier: LGPL-2.1-or-later
 
 ; Current systemd exposes udev's Varlink endpoint through the traditional
-; /run/udev/control symlink. PID 1 may create that compatibility link but does
-; not receive access to the endpoint itself.
+; /run/udev/control symlink. PID 1 creates that compatibility link and homed
+; reads it while enumerating block-backed homes. Grant only those operations;
+; neither domain receives access to the endpoint itself.
 (block particleos_runtime_symlinks
-  (allow .init_t .udev_var_run_t (lnk_file (create))))
+  (allow .init_t .udev_var_run_t (lnk_file (create)))
+  (allow .systemd_homed_t .udev_var_run_t (lnk_file (read))))

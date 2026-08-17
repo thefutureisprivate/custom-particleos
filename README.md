@@ -72,13 +72,14 @@ Every image includes:
 
 - an OBS-project-key-only Secure Boot database, signed UKIs, A/B `/usr`,
   signed dm-verity, and a project-signed IPE policy in enforcement mode;
-- TPM2 encryption for writable root and swap, bound to Secure Boot PCR 7;
+- TPM2 encryption for writable root, home backing storage, and swap, bound to
+  Secure Boot PCR 7, plus password-backed LUKS encryption for the homed user;
 - SELinux targeted policy in enforcing mode, including secureblue-derived
   restrictions for AF_ALG, IPsec, and unused socket classes;
 - irreversible ptrace, unprivileged BPF, io_uring, kernel-module-loading, and
   core-dump restrictions;
 - SELinux denial of user namespaces outside the kernel, PID 1, and the
-  confined systemd-sysupdate transfer helper;
+  confined systemd-sysupdate and systemd-homed helpers;
 - globally preloaded, signed `hardened_malloc` and the `no_rlimit_as` service
   companion;
 - a default-deny nftables policy with strict dual-stack reverse-path checks,
@@ -196,22 +197,41 @@ of at least 8 GiB. Put Secure Boot into setup mode before the first boot so the
 OBS project certificate can become the exclusive database key; then protect
 firmware settings with an administrator password.
 
-Write the OBS raw image directly to the boot volume and expand the volume to at
-least 8 GiB before first boot. The production UKI has no interactive or
-destructive installer.
+Attach or write the OBS raw image as temporary boot media, then select the
+`Installer` profile in systemd-boot. The upstream `systemd-sysinstall`
+interface asks for the target disk, whether to erase it, firmware boot-entry
+registration, and final confirmation. It copies only the signed ParticleOS
+partitions and UKI, installs systemd-boot, and reboots. Detach the installer
+media and boot the default profile from the target disk.
 
-The console wizard requires:
+The raw image may still be written directly to the final boot volume when a VPS
+provider cannot attach installation media. Expand that volume to at least 8
+GiB before its first default-profile boot so `systemd-repart` can create the
+persistent partitions. Never select the `Installer` profile when the only
+available disk contains data that must be retained.
 
-- a new local administrator name;
-- a password of at least 14 characters; and
+The installed system deliberately receives no credentials from the installer.
+On its first boot, the console asks separately for:
+
+- the root password, twice;
+- a new homed administrator name;
+- the administrator password, twice; and
 - one raw Ed25519 SSH public key.
 
-No account, password, SSH key, or private key is built into the image. The
-password is used only for console and `run0` authentication. The public key is
-available to sshd after a cold boot because the encrypted persistent root has
-already been unlocked. ParticleOS does not use systemd-homed: a
-password-encrypted homed account normally needs a home-unlocking credential,
-which an SSH public-key signature does not provide.
+No account, password, SSH key, or private key is built into the image or its
+installer profile. Root remains prohibited over SSH. The homed administrator
+is a member of `wheel` and `systemd-journal`; its user data is a LUKS/Btrfs
+image on the dedicated TPM2-encrypted home partition. The public key is stored
+in the signed homed user record, where systemd-userdb can supply it before the
+home is open.
+
+On a cold or inactive home, an interactive SSH login therefore has two distinct
+steps: sshd first verifies the Ed25519 key, then
+`systemd-home-fallback-shell` asks for the homed password and unlocks the user
+image before starting the real shell. `PasswordAuthentication` remains off;
+the second prompt cannot replace the key. Non-interactive commands and SFTP
+cannot answer that unlock prompt, so activate the home through an interactive
+login first.
 
 Use `run0` for privileged operations:
 
@@ -287,8 +307,9 @@ WAL-based point-in-time recovery, and independent application-image updates:
 ## SSH and DNS
 
 SSH listens on TCP 22 for every IPv4 and IPv6 source. Authentication accepts
-only the provisioned Ed25519 key. nftables applies per-source limits to new
-connections.
+only the provisioned Ed25519 key. systemd-userdb exposes that key while the
+home is locked; homed's fallback shell then asks for the home password before
+the session starts. nftables applies per-source limits to new connections.
 
 `systemd-resolved` is the sole host resolver. It authenticates Cloudflare's
 IPv4 and IPv6 endpoints as `cloudflare-dns.com` over TCP 853 and validates

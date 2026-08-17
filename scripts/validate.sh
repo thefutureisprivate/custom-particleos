@@ -35,7 +35,9 @@ extract_stanza() {
     ' "$file"
 }
 
-if find . -path ./.git -prune -o -type f \( -iname 'Containerfile*' -o -iname 'Dockerfile*' \) -print |
+if find . \
+        \( -path ./.git -o -path ./mkosi.output -o -path ./mkosi.cache -o -path ./mkosi.tools \) -prune \
+        -o -type f \( -iname 'Containerfile*' -o -iname 'Dockerfile*' \) -print |
         grep -q .; then
     fail "container recipes are forbidden; this is a native mkosi image"
 fi
@@ -79,6 +81,14 @@ hostname_apply=mkosi.extra/usr/lib/particleos/apply-hostname
 hostname_unit=mkosi.extra/usr/lib/systemd/system/particleos-hostname.service
 admin_firstboot=mkosi.extra/usr/lib/particleos/admin-firstboot
 admin_firstboot_unit=mkosi.extra/usr/lib/systemd/system/particleos-admin-firstboot.service
+firstboot_dropin=mkosi.extra/usr/lib/systemd/system/systemd-firstboot.service.d/40-particleos.conf
+installer_mount=mkosi.extra/usr/lib/particleos/installer-mount-source-esp
+installer_mount_unit=mkosi.extra/usr/lib/systemd/system/particleos-installer-source-esp.service
+sysinstall_dropin=mkosi.extra/usr/lib/systemd/system/systemd-sysinstall.service.d/40-particleos-source-esp.conf
+installer_tmpfiles=mkosi.extra/usr/lib/tmpfiles.d/particleos-installer.conf
+homed_config=mkosi.extra/usr/lib/systemd/homed.conf.d/40-particleos.conf
+homed_login_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
+home_repart=mkosi.extra/usr/lib/repart.d/50-home.conf
 base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 obs_recipes=("$obs_recipe" "$stalwart_obs_recipe" "$stalwart_seed_obs_recipe")
 
@@ -121,9 +131,24 @@ for forbidden_base_setting in \
     reject_fixed "$forbidden_base_setting" "$base_config"
 done
 
+[[ -x $installer_mount ]] || fail "$installer_mount must be executable"
+require_fixed 'StubDevicePartUUID-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f' "$installer_mount"
+require_fixed "tail --bytes=+5" "$installer_mount"
+require_fixed "tr -d '\\000'" "$installer_mount"
+require_fixed 'udevadm settle --timeout=10' "$installer_mount"
+require_fixed 'systemd-mount' "$installer_mount"
+require_fixed '--options=ro,nosuid,nodev,noexec' "$installer_mount"
+require_fixed 'Requires=particleos-installer-source-esp.service' "$sysinstall_dropin"
+require_fixed 'After=particleos-installer-source-esp.service' "$sysinstall_dropin"
+require_fixed 'Before=systemd-sysinstall.service' "$installer_mount_unit"
+require_fixed 'After=systemd-tmpfiles-setup.service systemd-udev-settle.service' "$installer_mount_unit"
+require_fixed 'CapabilityBoundingSet=' "$installer_mount_unit"
+require_fixed 'd /efi 0755 root root -' "$installer_tmpfiles"
+
 for role in "${roles[@]}"; do
     image_config="mkosi.images/$role/mkosi.conf"
     emergency_uki="mkosi.images/$role/emergency-uki.conf"
+    installer_uki="mkosi.images/$role/install-uki.conf"
     require_fixed "Include=%D/mkosi.role.conf" "$image_config"
     require_fixed "Dependencies=base,initrd" "$image_config"
     require_fixed "BaseTrees=%O/base" "$image_config"
@@ -131,10 +156,21 @@ for role in "${roles[@]}"; do
     require_fixed "Initrds=%O/initrd" "$image_config"
     require_fixed "ImageId=${role_image_ids[$role]}" "$image_config"
     require_fixed "Hostname=particle-" "$image_config"
-    require_fixed "UnifiedKernelImageProfiles=%D/$emergency_uki" "$image_config"
+    require_fixed "%D/$emergency_uki" "$image_config"
+    require_fixed "%D/$installer_uki" "$image_config"
     require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$image_config"
+    require_fixed "home=${role_image_ids[$role]}-*" "$image_config"
     require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$emergency_uki"
+    require_fixed "home=${role_image_ids[$role]}-*" "$emergency_uki"
+    require_fixed "home=encrypted+absent" "$emergency_uki"
     require_fixed "SignExpectedPcr=no" "$emergency_uki"
+    reject_fixed "passwd.plaintext-password.root" "$installer_uki"
+    require_fixed "ID=install" "$installer_uki"
+    require_fixed "systemd.unit=system-install.target" "$installer_uki"
+    require_fixed "systemd.mask=systemd-firstboot.service" "$installer_uki"
+    require_fixed "rd.systemd.mask=systemd-repart.service" "$installer_uki"
+    require_fixed "systemd.image_policy=esp=unprotected" "$installer_uki"
+    require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$installer_uki"
 done
 
 if [[ -n "$(extract_stanza Packages mkosi.images/dnsserver/mkosi.conf)" ]]; then
@@ -175,6 +211,7 @@ require_fixed "PostInstallationScripts=%D/$project_cert_installer" "$role_policy
 require_fixed "FinalizeScripts=%D/$finalize" "$role_policy"
 require_fixed "KernelInitrdModules=default,-binfmt_misc" "$role_policy"
 require_fixed "PostOutputScripts=%D/mkosi.scripts/remove-first-pass-checksum" "$role_policy"
+require_fixed "home=encrypted+absent" "$role_policy"
 
 require_fixed "PathExists=/usr/src/packages/SOURCES/_projectcert.crt" "$obs_config"
 require_fixed "Include=mkosi-obs" "$obs_config"
@@ -441,7 +478,7 @@ for removed_package in hostname iproute iputils p11-kit passwd systemd-ukify; do
         fail "$removed_package is forbidden in the target package set"
     fi
 done
-for required_dependency in authselect findutils gnupg2 libcurl-minimal policycoreutils sed systemd-container; do
+for required_dependency in authselect btrfs-progs dosfstools findutils gnupg2 libcurl-minimal policycoreutils sed systemd-container; do
     if ! grep -Fxq "$required_dependency" <<<"$composed_packages"; then
         fail "$required_dependency is missing from the shared base package set"
     fi
@@ -518,6 +555,13 @@ fi
 
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/30-swap.conf
 require_fixed "TPM2PCRs=7" mkosi.extra/usr/lib/repart.d/40-root.conf
+require_fixed "Type=home" "$home_repart"
+require_fixed "Format=btrfs" "$home_repart"
+require_fixed "SizeMinBytes=1G" "$home_repart"
+require_fixed "SizeMaxBytes=4G" "$home_repart"
+require_fixed "Encrypt=tpm2" "$home_repart"
+require_fixed "TPM2PCRs=7" "$home_repart"
+require_fixed "FactoryReset=yes" "$home_repart"
 require_fixed "CopyFiles=/usr/share/factory/root:/" mkosi.extra/usr/lib/repart.d/40-root.conf
 reject_fixed "MakeDirectories=" mkosi.extra/usr/lib/repart.d/40-root.conf
 reject_fixed "MakeSymlinks=" mkosi.extra/usr/lib/repart.d/40-root.conf
@@ -621,65 +665,68 @@ fi
 [[ -x $admin_firstboot ]] || fail "$admin_firstboot must be executable"
 require_fixed '[[ -t 0 && -t 1 ]]' "$admin_firstboot"
 require_fixed '^[a-z][a-z0-9_-]{0,30}$' "$admin_firstboot"
-require_fixed "minimum 14 characters" "$admin_firstboot"
 require_fixed "^ssh-ed25519" "$admin_firstboot"
 require_fixed 'base64 --decode' "$admin_firstboot"
 require_fixed '0000000b7373682d6564323535313900000020' "$admin_firstboot"
-require_fixed 'ssh-keygen -l -f "/home/$username/.ssh/authorized_keys"' "$admin_firstboot"
-require_fixed '(allow .useradd_t .systemd_userdbd_runtime_t (sock_file (read)))' \
-    mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
-require_fixed '(allow .passwd_t .init_t (fifo_file (getattr read)))' \
-    mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
-require_fixed '(allow .init_t .init_t (passwd (passwd)))' \
-    mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
-require_fixed "--no-log-init" "$admin_firstboot"
-require_fixed "--no-create-home" "$admin_firstboot"
-require_fixed "--user-group" "$admin_firstboot"
-require_fixed "--groups wheel,systemd-journal" "$admin_firstboot"
-require_fixed '| chpasswd' "$admin_firstboot"
-reject_fixed "--password" "$admin_firstboot"
-require_fixed 'password=' "$admin_firstboot"
-require_fixed '"/home/$username/.ssh/authorized_keys"' "$admin_firstboot"
-require_fixed "--mode=0700" "$admin_firstboot"
-require_fixed "--mode=0600" "$admin_firstboot"
-require_fixed 'restorecon -RF "/home/$username"' "$admin_firstboot"
-require_fixed 'userdel --remove -- "$username"' "$admin_firstboot"
-require_fixed 'groupdel -- "$username"' "$admin_firstboot"
-require_fixed 'getent group "$stale_username"' "$admin_firstboot"
-require_fixed 'mv --force --no-target-directory "$pending" "$marker"' "$admin_firstboot"
+require_fixed 'homectl create "$username"' "$admin_firstboot"
+require_fixed "--member-of=wheel,systemd-journal" "$admin_firstboot"
+require_fixed "--storage=luks" "$admin_firstboot"
+require_fixed "--fs-type=btrfs" "$admin_firstboot"
+require_fixed "--disk-size=90%" "$admin_firstboot"
+require_fixed "--auto-resize-mode=off" "$admin_firstboot"
+require_fixed "--luks-discard=yes" "$admin_firstboot"
+require_fixed "--nosuid=yes" "$admin_firstboot"
+require_fixed "--nodev=yes" "$admin_firstboot"
+require_fixed "--enforce-password-policy=yes" "$admin_firstboot"
+require_fixed '--ssh-authorized-keys=@"$key_file"' "$admin_firstboot"
+require_fixed 'userdbctl ssh-authorized-keys "$account"' "$admin_firstboot"
+require_fixed '[[ -e /home/"$account".home ]]' "$admin_firstboot"
+require_fixed 'homectl list --no-legend --no-pager' "$admin_firstboot"
+require_fixed 'mv --force --no-target-directory' "$admin_firstboot"
+reject_fixed '| chpasswd' "$admin_firstboot"
+reject_fixed 'useradd ' "$admin_firstboot"
+reject_fixed 'authorized_keys' "$admin_firstboot"
 require_fixed "ConditionPathExists=!/var/lib/particleos/admin-provisioned" "$admin_firstboot_unit"
+reject_fixed "ConditionFirstBoot=yes" "$admin_firstboot_unit"
+require_fixed "Requires=systemd-firstboot.service systemd-homed.service" "$admin_firstboot_unit"
+require_fixed "After=home.mount" "$admin_firstboot_unit"
+require_fixed "systemd-firstboot.service" "$admin_firstboot_unit"
 require_fixed "Before=getty-pre.target sshd.socket systemd-user-sessions.service multi-user.target" \
     "$admin_firstboot_unit"
-require_fixed "StandardInput=tty" "$admin_firstboot_unit"
+require_fixed "StandardInput=tty-force" "$admin_firstboot_unit"
 require_fixed "TTYPath=/dev/console" "$admin_firstboot_unit"
 require_fixed "TimeoutStartSec=infinity" "$admin_firstboot_unit"
 require_fixed "CapabilityBoundingSet=" "$admin_firstboot_unit"
 require_fixed "IPAddressDeny=any" "$admin_firstboot_unit"
-require_fixed "NoNewPrivileges=no" "$admin_firstboot_unit"
-reject_fixed "NoNewPrivileges=yes" "$admin_firstboot_unit"
-reject_fixed "PrivateDevices=yes" "$admin_firstboot_unit"
+require_fixed "NoNewPrivileges=yes" "$admin_firstboot_unit"
+reject_fixed "PrivateDevices=" "$admin_firstboot_unit"
 require_fixed "PrivateNetwork=yes" "$admin_firstboot_unit"
+require_fixed "ProtectHome=read-only" "$admin_firstboot_unit"
 require_fixed "ProtectSystem=strict" "$admin_firstboot_unit"
-require_fixed "ReadWritePaths=/etc /home /run /var/lib/particleos" "$admin_firstboot_unit"
+require_fixed "ReadWritePaths=/run /var/lib/particleos" "$admin_firstboot_unit"
 require_fixed "RestrictAddressFamilies=AF_UNIX" "$admin_firstboot_unit"
 require_fixed "RestrictNamespaces=yes" "$admin_firstboot_unit"
 require_fixed "SystemCallFilter=@system-service" "$admin_firstboot_unit"
 require_fixed "WantedBy=multi-user.target" "$admin_firstboot_unit"
-reject_fixed "enable particleos-admin-firstboot.service" "$base_preset"
-require_fixed "disable particleos-admin-firstboot.service" "$base_preset"
-require_fixed "disable systemd-homed.service" "$base_preset"
+require_fixed "enable particleos-admin-firstboot.service" "$base_preset"
+require_fixed "enable systemd-homed.service" "$base_preset"
 require_fixed "disable systemd-homed-firstboot.service" "$base_preset"
-reject_fixed "enable systemd-homed" "$base_preset"
 require_fixed "authselect select local" mkosi.scripts/particleos.postinst.chroot
-reject_fixed "authselect enable-feature with-systemd-homed" mkosi.scripts/particleos.postinst.chroot
-require_fixed "pam_systemd_home\\.so/d" mkosi.scripts/particleos.postinst.chroot
+require_fixed "authselect enable-feature with-systemd-homed" mkosi.scripts/particleos.postinst.chroot
+require_fixed "pam_systemd_home\\.so" mkosi.scripts/particleos.postinst.chroot
+require_fixed "pam_unix\\.so/i auth" mkosi.scripts/particleos.postinst.chroot
 require_fixed "pam_systemd_loadkey\\.so/d" mkosi.scripts/particleos.postinst.chroot
-require_fixed "rm --force /usr/lib/tmpfiles.d/20-systemd-userdb.conf" \
+require_fixed "20-systemd-userdb.conf.example" \
     mkosi.scripts/particleos.postinst.chroot
-for removed_homed_path in \
+require_fixed "usermod --password '!unprovisioned' root" \
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed "/usr/bin/systemd-home-fallback-shell" \
+    mkosi.scripts/particleos.postinst.chroot
+require_fixed "/usr/lib/particleos/selinux/particleos_homed_login.cil" \
+    mkosi.scripts/particleos.postinst.chroot
+for retained_homed_path in \
         /usr/bin/homectl \
         /usr/lib64/security/pam_systemd_home.so \
-        /usr/lib64/security/pam_systemd_loadkey.so \
         /usr/lib/systemd/system/systemd-homed-firstboot.service \
         /usr/lib/systemd/system/systemd-homed.service \
         /usr/lib/systemd/systemd-homed \
@@ -687,28 +734,20 @@ for removed_homed_path in \
         /usr/lib/systemd/sshd_config.d/20-systemd-userdb.conf \
         /usr/share/dbus-1/system-services/org.freedesktop.home1.service \
         /usr/share/polkit-1/actions/org.freedesktop.home1.policy; do
-    require_fixed "$removed_homed_path" "$role_policy"
+    reject_fixed "$retained_homed_path" "$role_policy"
 done
-for removed_homed_source in \
-        mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil \
-        mkosi.extra/usr/lib/systemd/homed.conf.d/40-particleos.conf \
-        mkosi.extra/usr/lib/systemd/system/systemd-homed-firstboot.service.d/40-particleos-admin.conf; do
-    [[ ! -e $removed_homed_source ]] || fail "$removed_homed_source must be removed"
-done
-require_fixed '"$BUILDROOT/etc/systemd/system/dbus-org.freedesktop.home1.service"' \
+require_fixed "/usr/lib64/security/pam_systemd_loadkey.so" "$role_policy"
+require_fixed "DefaultStorage=luks" "$homed_config"
+require_fixed "DefaultFileSystemType=btrfs" "$homed_config"
+require_fixed ".sshd_session_t .systemd_userdbd_runtime_t" "$homed_login_policy"
+require_fixed ".policykit_auth_t .systemd_homed_t" "$homed_login_policy"
+require_fixed "ExecStart=/usr/bin/systemd-firstboot --prompt-root-password --mute-console=yes" \
+    "$firstboot_dropin"
+reject_fixed "--prompt-locale" "$firstboot_dropin"
+require_fixed "ln -sfn ../particleos-admin-firstboot.service" "$finalize"
+require_fixed '    "$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants/particleos-admin-firstboot.service"' \
     "$finalize"
-require_fixed '"$BUILDROOT/etc/systemd/system/multi-user.target.wants/systemd-homed.service"' \
-    "$finalize"
-require_fixed 'homed_wants="$BUILDROOT/etc/systemd/system/systemd-homed.service.wants"' \
-    "$finalize"
-require_fixed '"$homed_wants/systemd-homed-activate.service"' "$finalize"
-require_fixed '"$homed_wants/systemd-homed-firstboot.service"' "$finalize"
-require_fixed 'rmdir "$homed_wants"' "$finalize"
-require_fixed 'mkdir -p "$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants"' \
-    "$finalize"
-require_fixed 'ln -sfn ../particleos-admin-firstboot.service' "$finalize"
-require_fixed '"$BUILDROOT/usr/lib/systemd/system/multi-user.target.wants/particleos-admin-firstboot.service"' \
-    "$finalize"
+reject_fixed "homed_wants=" "$finalize"
 require_fixed "PermitRootLogin no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "PasswordAuthentication no"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
 require_fixed "AuthenticationMethods publickey"     mkosi.extra/etc/ssh/sshd_config.d/40-particleos-hardening.conf
@@ -1084,14 +1123,13 @@ require_fixed 'transitions into Fedora'"'"'s confined `systemd_importd_t` domain
     "$stalwart_image_readme"
 require_fixed "sysupdate's installed" "$stalwart_image_readme"
 require_fixed "only the separately labelled" "$stalwart_image_readme"
-require_fixed "at least 14 characters" README.md
+require_fixed "root password, twice" README.md
+require_fixed "administrator password, twice" README.md
 require_fixed "raw Ed25519 SSH public key" README.md
-require_fixed "after a cold boot" README.md
-require_fixed "does not use systemd-homed" README.md
-reject_fixed "homectl update" README.md
-require_fixed "systemd-homed is intentionally removed" docs/SECURITY-MODEL.md
-require_fixed "which an SSH public-key signature does not provide" docs/SECURITY-MODEL.md
-reject_fixed "homectl update" docs/SECURITY-MODEL.md
+require_fixed "systemd-home-fallback-shell" README.md
+require_fixed "PasswordAuthentication" README.md
+require_fixed "systemd-home-fallback-shell" docs/SECURITY-MODEL.md
+require_fixed "This second prompt is not SSH password authentication" docs/SECURITY-MODEL.md
 require_fixed '/usr/lib/systemd/import-pubring\.pgp -- system_u:object_r:systemd_conf_t:s0' \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed 'particleos_stalwart_managed_unit_t:s0' \
@@ -1274,9 +1312,7 @@ require_fixed "/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.
     mkosi.scripts/particleos.postinst.chroot
 require_fixed "(deny userns_restricted_domain self (user_namespace (create))))" \
     mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
-require_fixed "(.init_t .kernel_t .systemd_importd_t))" \
-    mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
-reject_fixed ".systemd_homework_t" \
+require_fixed "(.init_t .kernel_t .systemd_homework_t .systemd_importd_t))" \
     mkosi.extra/usr/lib/particleos/selinux/secureblue_harden_userns.cil
 require_fixed "libhardened_malloc.so" mkosi.extra/etc/ld.so.preload
 require_fixed "L /etc/ld.so.preload" mkosi.extra/usr/lib/tmpfiles.d/etc.conf
@@ -1299,7 +1335,7 @@ reject_fixed "fs.binfmt_misc.status" mkosi.extra/usr/lib/sysctl.d/70-particleos-
 require_fixed "disable authselect-apply-changes.service"     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
 require_fixed "enable polkit-agent-helper.socket" \
     mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
-reject_fixed 'homectl --help' mkosi.scripts/particleos.postinst.chroot
+require_fixed 'homectl --help' mkosi.scripts/particleos.postinst.chroot
 require_fixed 'polkit-agent-helper.socket' mkosi.scripts/particleos.postinst.chroot
 require_fixed 'polkit-agent-helper@.service' mkosi.scripts/particleos.postinst.chroot
 for required_current_systemd_unit in \
@@ -1367,17 +1403,10 @@ require_fixed ".udev_t .systemd_sysctl_t (process2 (nosuid_transition))" "$nosui
 require_fixed ".udev_t .lvm_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".sshd_keygen_t .ssh_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".sshd_keygen_t .setfiles_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
-require_fixed ".init_t .useradd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
-require_fixed ".init_t .passwd_exec_t" "$nosuid_transition_policy"
-require_fixed "(file (execute getattr ioctl map open read))" "$nosuid_transition_policy"
-require_fixed ".init_t .passwd_t (process (transition))" "$nosuid_transition_policy"
-require_fixed "(typetransition .init_t .passwd_exec_t process .passwd_t)" "$nosuid_transition_policy"
-require_fixed ".init_t .passwd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
-require_fixed ".init_t .ssh_keygen_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
-require_fixed ".init_t .setfiles_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
-require_fixed ".useradd_t .setfiles_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
-reject_fixed ".systemd_homed_t" "$nosuid_transition_policy"
-reject_fixed ".systemd_homework_t" "$nosuid_transition_policy"
+require_fixed ".systemd_homed_t .systemd_homework_t (process2 (nosuid_transition))" \
+    "$nosuid_transition_policy"
+reject_fixed ".init_t .useradd_t" "$nosuid_transition_policy"
+reject_fixed ".init_t .passwd_t" "$nosuid_transition_policy"
 require_fixed ".getty_t .local_login_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".local_login_t .unconfined_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
@@ -1394,7 +1423,8 @@ runtime_symlink_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_runtime
 require_fixed "/usr/lib/particleos/selinux/particleos_runtime_symlinks.cil" \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed ".init_t .udev_var_run_t (lnk_file (create))" "$runtime_symlink_policy"
-reject_fixed ".systemd_homed_t" "$runtime_symlink_policy"
+require_fixed ".systemd_homed_t .udev_var_run_t (lnk_file (read))" \
+    "$runtime_symlink_policy"
 require_fixed "selinux_factory_link_context='/etc/selinux -l system_u:object_r:etc_t:s0'" \
     mkosi.scripts/particleos.postinst.chroot
 pcr_measurement_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_pcr_measurement.cil
@@ -1440,11 +1470,18 @@ if rg -n -i '(mkosi\.rootpw|home\.create\.|hashedPassword|password[[:space:]]*[:
     fail "known-password material is forbidden"
 fi
 
-if [[ -n "$(find . -path ./.git -prune -o -type f \( -iname '*.key' -o -iname '*.p12' -o -iname '*.pfx' -o -iname 'id_rsa' -o -iname 'id_ed25519' \) -print)" ]]; then
+if [[ -n "$(find . \
+        \( -path ./.git -o -path ./mkosi.output -o -path ./mkosi.cache -o -path ./mkosi.tools \) -prune \
+        -o -type f \( -iname '*.key' -o -iname '*.p12' -o -iname '*.pfx' -o -iname 'id_rsa' -o -iname 'id_ed25519' \) -print)" ]]; then
     fail "private-key files are forbidden"
 fi
 
-if rg -n '[[:blank:]]+$' --glob '!.git/**' --glob '!AGENTS.md' .; then
+if rg -n '[[:blank:]]+$' \
+        --glob '!.git/**' \
+        --glob '!mkosi.output/**' \
+        --glob '!mkosi.cache/**' \
+        --glob '!mkosi.tools/**' \
+        --glob '!AGENTS.md' .; then
     fail "trailing whitespace is forbidden"
 fi
 

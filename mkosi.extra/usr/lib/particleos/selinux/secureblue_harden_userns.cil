@@ -2,14 +2,14 @@
 ;
 ; SPDX-License-Identifier: Apache-2.0 OR MIT
 
-; systemd-sysupdate needs privileged user namespaces for its internal sandbox.
-; Fedora transitions its helper to systemd_importd_t. Permit only that helper,
-; the kernel, and PID 1 descendants which remain in init_t; deny creation to
-; every other SELinux domain, including login users and run0 shells.
+; systemd-sysupdate and homed need privileged user namespaces in their
+; confined helpers. Permit only those helpers, the kernel, and PID 1
+; descendants which remain in init_t; deny creation to every other SELinux
+; domain, including login users and run0 shells.
 (block secureblue_harden_userns
   (typeattribute userns_privileged_domain)
   (typeattributeset userns_privileged_domain
-    (.init_t .kernel_t .systemd_importd_t))
+    (.init_t .kernel_t .systemd_homework_t .systemd_importd_t))
 
   (typeattribute userns_restricted_domain)
   (typeattributeset userns_restricted_domain

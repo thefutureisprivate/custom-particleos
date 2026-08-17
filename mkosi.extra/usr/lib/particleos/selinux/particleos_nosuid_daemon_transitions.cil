@@ -30,31 +30,10 @@
   (allow .udev_t .lvm_t (process2 (nosuid_transition)))
   (allow .sshd_keygen_t .ssh_keygen_t (process2 (nosuid_transition)))
   (allow .sshd_keygen_t .setfiles_t (process2 (nosuid_transition)))
+  (allow .systemd_homed_t .systemd_homework_t (process2 (nosuid_transition)))
   (allow .getty_t .local_login_t (process2 (nosuid_transition)))
 
-  ; The console-only first-boot wizard runs as init_t and uses Fedora's
-  ; confined useradd, passwd, SSH key validation, and relabel helpers. Fedora
-  ; does not define the init_t transition for chpasswd, so add it explicitly;
-  ; the program then receives only the existing passwd_t policy rather than
-  ; updating the shadow database from init_t.
-  (allow .init_t .useradd_t (process2 (nosuid_transition)))
-  (allow .init_t .passwd_exec_t
-    (file (execute getattr ioctl map open read)))
-  (allow .init_t .passwd_t (process (transition)))
-  (typetransition .init_t .passwd_exec_t process .passwd_t)
-  (allow .init_t .passwd_t (process2 (nosuid_transition)))
-  (allow .passwd_t .init_t (fifo_file (getattr read)))
-  (allow .init_t .init_t (passwd (passwd)))
-  (allow .init_t .ssh_keygen_t (process2 (nosuid_transition)))
-  (allow .init_t .setfiles_t (process2 (nosuid_transition)))
-  (allow .useradd_t .setfiles_t (process2 (nosuid_transition)))
-
-  ; shadow-utils consults nss-systemd before creating the local account. Let
-  ; its confined useradd_t domain inspect only the userdb multiplexer socket;
-  ; connection and message permissions remain governed by Fedora policy.
-  (allow .useradd_t .systemd_userdbd_runtime_t (sock_file (read)))
-
-  ; Console login starts the per-user manager and enters the Fedora user
+  ; A homed login starts the per-user manager and enters the Fedora user
   ; domain. OpenSSH additionally re-executes through sshd_session_t. Fedora
   ; already defines and permits these transitions on ordinary mounts.
   (allow .init_t .unconfined_t (process2 (nosuid_transition)))

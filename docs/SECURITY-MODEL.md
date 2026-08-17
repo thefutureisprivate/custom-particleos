@@ -56,8 +56,10 @@ VPS provider.
    enables lockdown confidentiality mode, IPE enforcement, auditing, SELinux,
    signed dm-verity discovery, and `nosuid,nodev` writable-root mounts.
 3. Signed dm-verity metadata authenticates the immutable `/usr` partition.
-4. TPM2 policies bound to PCR 7 unlock encrypted root and swap only while the
-   exclusive OBS project certificate defines the Secure Boot state.
+4. TPM2 policies bound to PCR 7 unlock encrypted root, home backing storage,
+   and swap only while the exclusive OBS project certificate defines the
+   Secure Boot state. The homed user image has its own password-backed LUKS
+   boundary inside that storage.
 5. `systemd-sysupdate` installs complete A/B `/usr`, verity, signature, and UKI
    artifacts. Boot counting preserves a previously blessed image.
 6. On the mailserver, PID 1 verifies the selected Stalwart DDI's embedded
@@ -84,11 +86,11 @@ that the kernel trusts through UEFI.
 | Area | Enforced default |
 |---|---|
 | Image integrity | Project-key-only Secure Boot, signed UKI, A/B `/usr`, signed dm-verity, signed IPE policy |
-| State protection | PCR 7-bound TPM2 encryption for root and swap; writable root mounted `nosuid,nodev` |
+| State protection | PCR 7-bound TPM2 encryption for root, home backing storage, and swap; password-backed LUKS homed image; writable root and user home mounted `nosuid,nodev` |
 | Mandatory access control | SELinux targeted/enforcing with role-specific policy and `handle-unknown=deny` |
 | Kernel | Lockdown, signed modules, Yama scope 3, unprivileged BPF and io_uring denial, restricted perf/kexec/log access, irreversible module lockdown |
 | Memory | Allocation/free initialization, allocator randomization, signed `hardened_malloc`, `no_rlimit_as` for managed services |
-| Userspaces | SELinux-denied user namespaces except kernel, PID 1, and the sysupdate helper; core dumps disabled in every layer |
+| Userspaces | SELinux-denied user namespaces except kernel, PID 1, and the confined sysupdate/homed helpers; core dumps disabled in every layer |
 | Network | Default-deny nftables, pre-conntrack role filtering, dual-stack FIB reverse-path checks, source and global admission limits |
 | DNS | Cloudflare DNS over TLS only, strict local DNSSEC, no DHCP/RA resolver override or plaintext fallback |
 | Socket classes | SELinux denial of AF_ALG, IPsec control, packet-radio, and unused legacy families |
@@ -122,10 +124,10 @@ switch-root.
 
 Because `/usr` is `nosuid`, service-domain transitions require explicit
 `process2:nosuid_transition` permissions. ParticleOS grants only the named
-transitions required by shipped daemons, first-boot provisioning, console
-authentication, user sessions, and SSH re-exec. PostgreSQL and Stalwart also
-receive their matching `nnp_transition` permission because both services use
-`NoNewPrivileges=yes`.
+transitions required by shipped daemons, homed's isolated homework process,
+console authentication, user sessions, and SSH re-exec. PostgreSQL and
+Stalwart also receive their matching `nnp_transition` permission because both
+services use `NoNewPrivileges=yes`.
 
 The module-lockdown unit runs after the declared modules and nftables rules are
 loaded. It removes the modprobe helper and sets
@@ -137,8 +139,9 @@ Yama scope 3 and SELinux's `deny_ptrace` boolean prohibit process attachment;
 scope 3 is irreversible until reboot. Unprivileged BPF and io_uring are
 disabled. Fedora 44 does not expose `kernel.unprivileged_userns_clone`, so
 user-namespace creation is denied by SELinux to every shipped domain except
-`kernel_t`, `init_t`, and `systemd_importd_t`, plus a low per-UID namespace
-ceiling. No container runtime is installed.
+`kernel_t`, `init_t`, `systemd_importd_t`, and `systemd_homework_t`, plus a low
+per-UID namespace ceiling. The latter two exceptions are confined helpers for
+systemd-sysupdate and systemd-homed. No container runtime is installed.
 
 Kexec, userfaultfd, implicit executable memfd behavior, kernel pointers and
 logs, unsafe line-discipline autoload, SysRq, and foreign-binary-format
@@ -199,18 +202,34 @@ Cloudflare outage cannot consume a healthy OS boot attempt.
 
 ## Administration
 
-There are no embedded user credentials. A console-only first-boot service
-creates one classic local administrator inside the encrypted writable root.
-It requires a password of at least 14 characters and a syntactically valid raw
-Ed25519 public key, creates the home at mode 0700 and `authorized_keys` at mode
-0600, restores SELinux labels, and records completion atomically.
+The installer profile contains no credential and boots directly into upstream
+`systemd-sysinstall`. That interface selects and partitions the target, copies
+the signed OS, links the UKI, installs systemd-boot, and reboots; it does not
+create accounts. On the installed system, `systemd-firstboot` replaces the
+unprovisioned root-password sentinel only after a separate console prompt.
 
-The password is accepted by console login and `run0`; SSH remains key-only.
-systemd-homed is intentionally removed: a password-protected homed account
-normally needs a password or another home-unlocking token before sshd can
-activate it, which an SSH public-key signature does not provide. Polkit
-authorizes `run0`; `sudo` is absent. Polkit's root, socket-activated PAM helper
-does not require a set-ID executable.
+A second console-only service creates one systemd-homed administrator in
+`wheel` and `systemd-journal`. It accepts only a syntactically valid raw
+Ed25519 key, passes that public key to `homectl create`, explicitly selects a
+password-encrypted LUKS/Btrfs user image, enforces password-quality policy, and
+records completion atomically. The dedicated `/home` backing partition is
+also TPM2 encrypted, capped at 4 GiB so an administrator home cannot consume
+application storage, and the user image is mounted `nosuid,nodev`.
+
+The key is stored in the signed homed identity rather than only inside the
+locked home. sshd's packaged systemd-userdb `AuthorizedKeysCommand` can
+therefore verify it before activation. After successful key authentication,
+`systemd-home-fallback-shell` asks for the homed password, activates the LUKS
+image, upgrades the initially incomplete session, and chain-loads the real
+shell. This second prompt is not SSH password authentication:
+`PasswordAuthentication` and keyboard-interactive authentication remain off,
+and root SSH remains prohibited. A locked home must first be opened by an
+interactive session before SFTP or a remote command can run unattended.
+
+The homed password is accepted by console login and `run0`; the distinct root
+password is reserved for console and recovery use. Polkit authorizes `run0`;
+`sudo` is absent. Polkit's root, socket-activated PAM helper does not require a
+set-ID executable.
 
 SSH is socket activated on every IPv4 and IPv6 source. Only the Ed25519 host
 key generation instance is enabled. Every session receives Fedora's
@@ -218,8 +237,9 @@ key generation instance is enabled. Every session receives Fedora's
 restrictions. `NoNewPrivileges=yes` is omitted because OpenSSH re-exec must
 transition from `sshd_t` to `sshd_session_t`.
 
-Shared mutable operator data is limited to the administrator's encrypted-root
-home. Role-specific mutable paths are listed below.
+Shared mutable operator data is limited to the signed homed identity and
+`/home/<administrator>.home` on encrypted persistent storage. Role-specific
+mutable paths are listed below.
 
 ## Webserver Role
 
@@ -348,14 +368,16 @@ A role release is complete only after the exact OBS artifact has been:
 1. built from an immutable reviewed commit;
 2. verified against the OBS project-signed per-artifact SHA-256 files and
    inspected through both the role-delta and shared-base manifests;
-3. booted with Secure Boot, TPM2 encryption, dm-verity, IPE, and SELinux
+3. installed through the installer profile and booted with Secure Boot, TPM2
+   root/home/swap encryption, homed LUKS, dm-verity, IPE, and SELinux
    enforcement active;
 4. tested for firewall fail-closed behavior, DoT-only DNS, DNSSEC success and
    failure, key-only SSH, and source-keyed admission limits;
 5. inspected with `systemd-analyze security` for exposed services;
-6. tested for first-boot provisioning, health-gate success and failure, OS
-   update and rollback, ptrace and user-namespace denial, zero coredump
-   artifacts, and SELinux socket-class denial.
+6. tested for separate root and homed password provisioning, locked-home
+   userdb SSH authentication and fallback-shell activation, `run0`, health-gate
+   success and failure, OS update and rollback, ptrace and user-namespace
+   denial, zero coredump artifacts, and SELinux socket-class denial.
 
 Webserver verification additionally covers nginx syntax and local responses,
 HTTP/3, Certbot staging issuance, renewal, and the fixed reload boundary.

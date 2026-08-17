@@ -3,31 +3,26 @@
 set -euo pipefail
 
 export LC_ALL=C
+export SYSTEMD_COLORS=0
 
 readonly state_directory=/var/lib/particleos
 readonly marker="$state_directory/admin-provisioned"
-readonly pending="$state_directory/admin-provisioning"
 
-username=
-password=
-confirmation=
-authorized_key=
 key_file=
 key_blob_file=
-account_created=0
-group_cleanup_required=0
+retrieved_key_file=
 
 valid_username() {
     [[ $1 =~ ^[a-z][a-z0-9_-]{0,30}$ ]]
 }
 
-valid_ed25519_key() {
+valid_ed25519_key_file() {
+    local file=$1
     local key_type=
     local key_payload=
-    local ignored=
     local blob_hex=
 
-    read -r key_type key_payload ignored <"$key_file"
+    read -r key_type key_payload _ <"$file"
     [[ $key_type == ssh-ed25519 && -n $key_payload ]] || return 1
     printf '%s' "$key_payload" | base64 --decode >"$key_blob_file" 2>/dev/null || return 1
     blob_hex=$(od --address-radix=n --format=x1 --output-duplicates "$key_blob_file" |
@@ -41,26 +36,9 @@ cleanup() {
     local status=$?
 
     trap - EXIT
-    password=
-    confirmation=
-    authorized_key=
-    if [[ -n $key_file ]]; then
-        rm --force -- "$key_file"
-    fi
-    if [[ -n $key_blob_file ]]; then
-        rm --force -- "$key_blob_file"
-    fi
-
-    if ((status != 0)); then
-        if ((account_created != 0)); then
-            userdel --remove -- "$username" || true
-        fi
-        if ((group_cleanup_required != 0)); then
-            groupdel -- "$username" || true
-        fi
-        rm --force -- "$pending"
-    fi
-
+    [[ -z $key_file ]] || rm --force -- "$key_file"
+    [[ -z $key_blob_file ]] || rm --force -- "$key_blob_file"
+    [[ -z $retrieved_key_file ]] || rm --force -- "$retrieved_key_file"
     exit "$status"
 }
 trap cleanup EXIT
@@ -73,32 +51,62 @@ trap 'exit 1' HUP INT TERM
 }
 
 install --directory --mode=0700 --owner=root --group=root "$state_directory"
+key_file=$(mktemp /run/particleos-admin-key.XXXXXX)
+key_blob_file=$(mktemp /run/particleos-admin-key-blob.XXXXXX)
+retrieved_key_file=$(mktemp /run/particleos-admin-key-retrieved.XXXXXX)
+chmod 0600 "$key_file" "$key_blob_file" "$retrieved_key_file"
 
-# A power loss cannot strand an unmarked local account. The pending record is
-# written before useradd and atomically becomes the completion marker. Only a
-# normal local UID created by this wizard is eligible for cleanup.
-if [[ -f $pending ]]; then
-    stale_username=
-    IFS= read -r stale_username <"$pending" || true
-    if valid_username "$stale_username" && getent passwd "$stale_username" >/dev/null; then
-        stale_uid=$(id --user "$stale_username")
-        if ((stale_uid >= 1000 && stale_uid <= 60000)); then
-            userdel --remove -- "$stale_username" || true
-        fi
+verify_account() {
+    local account=$1
+    local expected_key_file=${2:-}
+    local account_groups=
+    local expected_type=
+    local expected_payload=
+    local retrieved_type=
+    local retrieved_payload=
+
+    valid_username "$account" || return 1
+    homectl inspect "$account" >/dev/null || return 1
+    [[ -e /home/"$account".home ]] || return 1
+
+    account_groups=" $(id --name --groups "$account") "
+    [[ $account_groups == *' wheel '* ]] || return 1
+    [[ $account_groups == *' systemd-journal '* ]] || return 1
+
+    userdbctl ssh-authorized-keys "$account" >"$retrieved_key_file"
+    valid_ed25519_key_file "$retrieved_key_file" || return 1
+    if [[ -n $expected_key_file ]]; then
+        read -r expected_type expected_payload _ <"$expected_key_file"
+        read -r retrieved_type retrieved_payload _ <"$retrieved_key_file"
+        [[ $expected_type == "$retrieved_type" && $expected_payload == "$retrieved_payload" ]]
     fi
-    if valid_username "$stale_username" && getent group "$stale_username" >/dev/null; then
-        stale_gid=$(getent group "$stale_username" | cut --delimiter=: --fields=3)
-        if ((stale_gid >= 1000 && stale_gid <= 60000)); then
-            groupdel -- "$stale_username" || true
-        fi
+}
+
+# homectl creates the image and signed identity as one operation. If power was
+# lost after that transaction but before our marker rename, accept exactly one
+# fully provisioned homed administrator instead of creating a second account.
+mapfile -t existing_accounts < <(
+    homectl list --no-legend --no-pager | awk 'NF { print $1 }'
+)
+if ((${#existing_accounts[@]} > 0)); then
+    if ((${#existing_accounts[@]} != 1)) || ! verify_account "${existing_accounts[0]}"; then
+        echo "Existing homed accounts require manual console recovery; refusing automatic provisioning." >&2
+        exit 1
     fi
-    rm --force -- "$pending"
+
+    printf '%s\n' "${existing_accounts[0]}" >"$state_directory/admin-provisioned.new"
+    chmod 0600 "$state_directory/admin-provisioned.new"
+    mv --force --no-target-directory \
+        "$state_directory/admin-provisioned.new" "$marker"
+    exit 0
 fi
 
 printf '\nParticleOS administrator provisioning\n'
-printf 'The password is used only for console and run0 authentication.\n'
-printf 'Remote SSH access is key-only.\n\n'
+printf 'The root password was configured separately by systemd-firstboot.\n'
+printf 'This password encrypts the user home and authenticates console and run0 access.\n'
+printf 'SSH first verifies the Ed25519 key, then asks for this password to unlock the home.\n\n'
 
+username=
 while true; do
     read -r -p 'Administrator username: ' username
     if ! valid_username "$username"; then
@@ -112,78 +120,45 @@ while true; do
     break
 done
 
-while true; do
-    read -r -s -p 'Administrator password (minimum 14 characters): ' password
-    printf '\n'
-    if ((${#password} < 14)); then
-        echo "The password must contain at least 14 characters." >&2
-        password=
-        continue
-    fi
-    read -r -s -p 'Confirm administrator password: ' confirmation
-    printf '\n'
-    if [[ $password != "$confirmation" ]]; then
-        echo "The passwords do not match." >&2
-        password=
-        confirmation=
-        continue
-    fi
-    confirmation=
-    break
-done
-
-key_file=$(mktemp /run/particleos-admin-key.XXXXXX)
-key_blob_file=$(mktemp /run/particleos-admin-key-blob.XXXXXX)
-chmod 0600 "$key_file"
-chmod 0600 "$key_blob_file"
+authorized_key=
 while true; do
     read -r -p 'Administrator Ed25519 public key: ' authorized_key
     if [[ ! $authorized_key =~ ^ssh-ed25519[[:space:]]+[A-Za-z0-9+/]+={0,3}([[:space:]][^[:cntrl:]]*)?$ ]]; then
-        echo "Enter one raw ssh-ed25519 public key without authorized_keys options." >&2
+        echo "Enter one raw ssh-ed25519 public key without key-option prefixes." >&2
         continue
     fi
     printf '%s\n' "$authorized_key" >"$key_file"
-    if valid_ed25519_key; then
+    if valid_ed25519_key_file "$key_file"; then
         break
     fi
     echo "The Ed25519 public key is malformed." >&2
 done
+authorized_key=
 
-(umask 077; printf '%s\n' "$username" >"$pending")
-group_cleanup_required=1
-useradd \
-    --no-log-init \
-    --no-create-home \
-    --user-group \
-    --groups wheel,systemd-journal \
-    --shell /bin/bash \
-    -- "$username"
-account_created=1
+printf 'The Ed25519 SSH key is valid and will be stored in the signed user record.\n\n'
+printf 'systemd-homed will now ask for the administrator password twice.\n'
 
-# chpasswd reads the plaintext through its private pipe. The password is never
-# placed in the environment, an argument, a file, or the journal.
-printf '%s:%s\n' "$username" "$password" | chpasswd
-password=
+homectl create "$username" \
+    --member-of=wheel,systemd-journal \
+    --storage=luks \
+    --fs-type=btrfs \
+    --disk-size=90% \
+    --auto-resize-mode=off \
+    --luks-discard=yes \
+    --nosuid=yes \
+    --nodev=yes \
+    --noexec=no \
+    --enforce-password-policy=yes \
+    --ssh-authorized-keys=@"$key_file"
 
-install --directory --mode=0700 --owner="$username" --group="$username" \
-    "/home/$username" "/home/$username/.ssh"
-install --mode=0600 --owner="$username" --group="$username" \
-    "$key_file" "/home/$username/.ssh/authorized_keys"
-restorecon -RF "/home/$username"
-
-# ssh-keygen runs in Fedora's confined ssh_keygen_t domain. Validate the
-# installed ssh_home_t file, not the init-created temporary file in /run.
-if ! key_fingerprint=$(ssh-keygen -l -f "/home/$username/.ssh/authorized_keys" 2>/dev/null) ||
-        [[ $key_fingerprint != *" (ED25519)" ]]; then
-    echo "The installed Ed25519 public key could not be verified." >&2
+verify_account "$username" "$key_file" || {
+    echo "The homed account or its userdb SSH key failed verification." >&2
     exit 1
-fi
-printf 'Installing SSH key: %s\n' "$key_fingerprint"
+}
 
-mv --force --no-target-directory "$pending" "$marker"
-chmod 0600 "$marker"
-account_created=0
-group_cleanup_required=0
+printf '%s\n' "$username" >"$state_directory/admin-provisioned.new"
+chmod 0600 "$state_directory/admin-provisioned.new"
+mv --force --no-target-directory \
+    "$state_directory/admin-provisioned.new" "$marker"
 
-printf '\nAdministrator %s is ready. SSH key fingerprint: %s\n' \
-    "$username" "$key_fingerprint"
+printf '\nAdministrator %s is ready.\n' "$username"

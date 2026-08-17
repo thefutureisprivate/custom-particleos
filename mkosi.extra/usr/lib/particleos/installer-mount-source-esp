@@ -1,0 +1,33 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+set -euo pipefail
+
+readonly stub_partuuid_var=/sys/firmware/efi/efivars/StubDevicePartUUID-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
+
+[[ -r $stub_partuuid_var ]] || {
+    printf 'The UKI stub did not publish its source partition UUID.\n' >&2
+    exit 1
+}
+
+# efivarfs prefixes the UTF-16LE string with four attribute bytes. Partition
+# UUIDs are ASCII, so removing the interleaved NUL bytes is lossless.
+partuuid=$(tail --bytes=+5 -- "$stub_partuuid_var" | tr -d '\000')
+partuuid=${partuuid,,}
+[[ $partuuid =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || {
+    printf 'The UKI stub published an invalid source partition UUID.\n' >&2
+    exit 1
+}
+
+readonly source_device="/dev/disk/by-partuuid/${partuuid}"
+udevadm settle --timeout=10
+[[ -b $source_device ]] || {
+    printf 'The UKI source ESP %s is unavailable.\n' "$source_device" >&2
+    exit 1
+}
+
+mountpoint --quiet /efi && exit 0
+systemd-mount \
+    --type=vfat \
+    --options=ro,nosuid,nodev,noexec \
+    -- "$source_device" /efi

@@ -3,15 +3,18 @@
 [Unit]
 Description=Provision the ParticleOS administrator
 Documentation=https://github.com/thefutureisprivate/custom-particleos/
-After=local-fs.target systemd-tmpfiles-setup.service
+Requires=systemd-firstboot.service systemd-homed.service
+After=home.mount local-fs.target systemd-firstboot.service systemd-homed.service systemd-tmpfiles-setup.service
 Before=getty-pre.target sshd.socket systemd-user-sessions.service multi-user.target
+# Retry after an interrupted first boot until the verified account marker is
+# durable; ConditionFirstBoot= would strand a created home after a power loss.
 ConditionPathExists=!/var/lib/particleos/admin-provisioned
-RequiresMountsFor=/etc /home /var/lib/particleos
+RequiresMountsFor=/home /var/lib/particleos
 
 [Service]
 Type=oneshot
 ExecStart=/usr/lib/particleos/admin-firstboot
-StandardInput=tty
+StandardInput=tty-force
 StandardOutput=tty
 StandardError=tty
 TTYPath=/dev/console
@@ -19,21 +22,21 @@ TTYReset=yes
 TimeoutStartSec=infinity
 UMask=0077
 
-CapabilityBoundingSet=CAP_AUDIT_WRITE CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_MAC_ADMIN CAP_SETGID CAP_SETUID
+CapabilityBoundingSet=
 IPAddressDeny=any
-NoNewPrivileges=no
+NoNewPrivileges=yes
 PrivateNetwork=yes
 PrivateTmp=yes
 ProtectClock=yes
 ProtectControlGroups=yes
-ProtectHome=no
+ProtectHome=read-only
 ProtectHostname=yes
 ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectProc=invisible
 ProtectSystem=strict
-ReadWritePaths=/etc /home /run /var/lib/particleos
+ReadWritePaths=/run /var/lib/particleos
 RemoveIPC=yes
 RestrictAddressFamilies=AF_UNIX
 RestrictNamespaces=yes

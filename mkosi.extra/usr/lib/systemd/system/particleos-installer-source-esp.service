@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Mount the ParticleOS installer media ESP
+Documentation=https://github.com/thefutureisprivate/custom-particleos/
+DefaultDependencies=no
+Wants=systemd-tmpfiles-setup.service systemd-udev-settle.service
+After=systemd-tmpfiles-setup.service systemd-udev-settle.service
+Before=systemd-sysinstall.service
+ConditionPathExists=/sys/firmware/efi/efivars/StubDevicePartUUID-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/particleos/installer-mount-source-esp
+RemainAfterExit=yes
+UMask=0077
+
+CapabilityBoundingSet=
+IPAddressDeny=any
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectSystem=strict
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
