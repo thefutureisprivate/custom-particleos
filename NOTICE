@@ -1,4 +1,4 @@
-ParticleOS Webserver is derived from:
+Custom ParticleOS contains work derived from:
 
 ParticleOS
 https://github.com/systemd/particleos
@@ -6,7 +6,7 @@ Reference commit: b838e0360125937daf70db5e078dac4f4d4d28b4
 Copyright 2024-2026 ParticleOS contributors
 Licensed under LGPL-2.1-or-later.
 
-Server and webserver configuration is adapted from:
+Applicable server and webserver configuration is adapted from:
 
 GrapheneOS infrastructure
 https://github.com/GrapheneOS/infrastructure

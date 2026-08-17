@@ -1,209 +1,176 @@
-# Custom ParticleOS
+<h1 align="center">Custom ParticleOS</h1>
 
-This repository builds custom, minimal, immutable Fedora 44 x86-64 ParticleOS
-images. The current images target server appliances for VPSs. A single mkosi
-dependency graph assembles an unpublished Fedora base directory once and then
-copies it into every requested complete role image. Role packages, identity,
-policy, finalization, partitioning, dm-verity, and UKI generation are applied
-only to those derived images.
+<p align="center">
+  Minimal, immutable Fedora server images for hardened VPS appliances.
+</p>
 
-The role-oriented layout leaves room for a future desktop variant. It is not a
-current build target and will require its own package set, policy, and tests.
+<p align="center">
+  <strong>Fedora 44 · x86-64 · UEFI Secure Boot · TPM 2.0</strong>
+</p>
 
-| Role | Image ID | Additional packages | Service state |
+## Table of Contents
+
+- [Purpose](#purpose)
+- [Architecture](#architecture)
+- [Images](#images)
+- [Security and Hardening](#security-and-hardening)
+- [Trust and Dependencies](#trust-and-dependencies)
+- [Build in OBS](#build-in-obs)
+- [Installation](#installation)
+- [Webserver Operations](#webserver-operations)
+- [Mailserver Operations](#mailserver-operations)
+- [SSH and DNS](#ssh-and-dns)
+- [Updates and Rollback](#updates-and-rollback)
+- [Verification](#verification)
+- [Licensing](#licensing)
+
+## Purpose
+
+Custom ParticleOS builds two purpose-specific VPS images from one shared Fedora
+44 base. The operating system is immutable and authenticated; only explicitly
+selected application state lives on the encrypted writable root.
+
+The repository contains native [mkosi](https://github.com/systemd/mkosi)
+definitions for [Open Build Service](https://build.opensuse.org/). It does not
+contain a `Containerfile`, OCI image, bootc layer, or container build.
+
+## Architecture
+
+[`mkosi.conf`](./mkosi.conf) is the aggregate dependency graph. It constructs
+the unpublished `base` image once, then copies that base into each requested
+role. [`mkosi.role.conf`](./mkosi.role.conf) applies the common final-image
+policy after the copy, so role packages, identities, SELinux policy,
+partitioning, dm-verity, and signed UKIs belong only to complete images.
+
+```text
+Fedora 44 base
+├── ParticleOS-Webserver
+│   └── nginx-core + Certbot
+└── ParticleOS-Mailserver
+    └── PostgreSQL 18 + signed Stalwart service image
+```
+
+The mailserver keeps PostgreSQL host-native, Unix-socket-only, and
+peer-authenticated. Stalwart itself runs from a separately signed,
+dm-verity-protected systemd `RootImage=` Discoverable Disk Image (DDI) stored
+on the persistent encrypted root. The application image has its own atomic
+current/previous selection and is not replaced by an OS A/B rollback.
+
+## Images
+
+| Role | Image ID | Public services | Included application stack |
 |---|---|---|---|
-| `webserver` | `ParticleOS-Webserver` | `nginx-core`, Certbot | Production role; nginx and renewal enabled |
-| `mailserver` | `ParticleOS-Mailserver` | PostgreSQL 18, PostgreSQL-only Stalwart | Production role; local database and Stalwart enabled |
-| `dnsserver` | `ParticleOS-Dnsserver` | None | Empty placeholder; not built by OBS |
+| Webserver | `ParticleOS-Webserver` | SSH 22; HTTP 80; HTTPS TCP/UDP 443 | nginx-core, HTTP/3, Certbot |
+| Mailserver | `ParticleOS-Mailserver` | SSH 22; SMTP 25; HTTPS 443; submissions 465; IMAPS 993 | PostgreSQL 18, Stalwart 0.16.17 |
 
-The PostgreSQL-only Stalwart RPM recipe is maintained in the dedicated
-[custom-stalwart](https://github.com/thefutureisprivate/custom-stalwart)
-repository. The independently built base-hardening packages are maintained in
-[custom-hardened_malloc](https://github.com/thefutureisprivate/custom-hardened_malloc),
-[custom-no_rlimit_as](https://github.com/thefutureisprivate/custom-no_rlimit_as),
-and [custom-ipe-policy](https://github.com/thefutureisprivate/custom-ipe-policy).
-This image repository owns their consumption and trust policy, not their OBS
-package recipes. The mail role initializes a checksummed, Unix-socket-only local
-PostgreSQL cluster and provisions an unprivileged `stalwart` database role by
-peer identity, so no database password exists. Stalwart starts automatically;
-its bootstrap/recovery listener on TCP 8080 is never public. The DNS-service
-role remains an empty placeholder with no current build target. The aggregate
-requests `webserver` and `mailserver` together, so mkosi assembles the shared
-`base` dependency once and derives both complete images from it.
+Both images target x86-64 VPS guests. CPU microcode packages are omitted
+because the VPS provider controls the physical host's microcode.
 
-There is intentionally no `Containerfile`, OCI image, bootc layer, or
-container build. [`mkosi.conf`](./mkosi.conf) is the native dependency-graph
-entry point, [`mkosi.role.conf`](./mkosi.role.conf) is the common final-image
-policy, and the only OBS dependency recipe is
-[`.obs/fedora/x86-64/mkosi.conf`](./.obs/fedora/x86-64/mkosi.conf).
+## Security and Hardening
 
-This repository derives its image layout from
-[systemd/particleos](https://github.com/systemd/particleos) and adapts the
-applicable server and nginx hardening from
-[GrapheneOS/infrastructure](https://github.com/GrapheneOS/infrastructure) and
-[GrapheneOS/grapheneos.org](https://github.com/GrapheneOS/grapheneos.org), plus
-the applicable kernel and allocator hardening from
-[secureblue](https://github.com/secureblue/secureblue).
-It is not GrapheneOS and is not an official GrapheneOS or systemd project.
-Exact reference commits are recorded in [NOTICE](./NOTICE).
+Every image includes:
 
-## Security baseline
+- an OBS-project-key-only Secure Boot database, signed UKIs, A/B `/usr`,
+  signed dm-verity, and a project-signed IPE policy in enforcement mode;
+- TPM2 encryption for writable root and swap, bound to Secure Boot PCR 7;
+- SELinux targeted policy in enforcing mode, including secureblue-derived
+  restrictions for AF_ALG, IPsec, and unused socket classes;
+- irreversible ptrace, unprivileged BPF, io_uring, kernel-module-loading, and
+  core-dump restrictions;
+- SELinux denial of user namespaces outside the kernel, PID 1, and the
+  confined systemd-sysupdate transfer helper;
+- globally preloaded, signed `hardened_malloc` and the `no_rlimit_as` service
+  companion;
+- a default-deny nftables policy with strict dual-stack reverse-path checks,
+  role-specific ingress, identity-specific egress, and bounded connection
+  rates;
+- strict DNS over TLS to Cloudflare with local DNSSEC validation and no
+  plaintext DNS fallback;
+- key-only Ed25519 SSH, with root login, passwords, forwarding, and tunnels
+  disabled;
+- zero set-user-ID or set-group-ID executables. `mount` and `umount` remain
+  mode 0755 and are available through `run0`;
+- systemd `run0` and polkit for administration. `sudo` is not installed;
+- HTTPS-only Fedora, OBS, systemd, and system-update transports;
+- no crash dumps, suspend, hibernation, desktop stack, default password,
+  embedded private key, or weak-dependency recommendations.
 
-Every current role inherits:
+The webserver adds a restricted nginx service, HTTP/1.1, HTTP/2 and HTTP/3,
+modern TLS defaults, security headers, bounded requests and logs, and a
+non-root Certbot service that requires the ACME `shortlived` profile.
 
-- OBS-signed Unified Kernel Images, an exclusive OBS-project Secure Boot trust
-  database, a project-signed IPE policy in enforcement mode, and signed
-  dm-verity for the immutable `/usr` slots;
-- a TPM2-encrypted writable root mounted `nosuid,nodev` and encrypted swap,
-  both bound to Secure Boot PCR 7;
-- Fedora SELinux in enforcing targeted mode, with policy loaded from immutable
-  usr before switch-root;
-- GrapheneOS- and secureblue-derived kernel, allocator, TCP, nftables, chrony,
-  OpenSSH, and systemd service hardening;
-- authenticated DNS over TLS to Cloudflare with fail-closed local DNSSEC
-  validation, no DHCP/RA resolver override, and no plaintext DNS egress;
-- complete ptrace attachment denial, SELinux-denied user namespaces outside
-  the kernel, PID 1, and the confined sysupdate helper domain,
-  secureblue userspace socket-class restrictions, and layered core-dump
-  prevention;
-- zero set-user-ID or set-group-ID executables: `mount` and `umount` remain
-  available to `run0`, while polkit performs PAM authentication in its root,
-  socket-activated helper service;
-- secureblue's signed `hardened_malloc` package preloaded for system and user
-  processes, with its `no_rlimit_as` preload companion for system services;
-- irreversible kernel-module loading disablement after the early boot modules
-  and firewall are loaded;
-- an nftables default-deny policy, pre-conntrack role filtering, strict
-  dual-stack reverse-path filtering, globally reachable source-rate-limited
-  SSH, and identity-, protocol-, and rate-limited service egress;
-- key-only Ed25519 SSH with root login, passwords, forwarding, tunnels, and
-  unused authentication methods disabled;
-- no crash dumps, no suspend/hibernation, no desktop stack, no default password,
-  no weak-dependency recommendations, no packaged documentation, and no
-  embedded private key;
-- HTTPS-only Fedora, openSUSE build-tools, ParticleOS OBS, OBS systemd, and
-  system-update transports;
-- systemd `run0` plus polkit for administration. `sudo` is not installed.
+The mailserver adds a dedicated Stalwart SELinux domain, a restrictive systemd
+sandbox, a PostgreSQL-only Stalwart feature set, exact packaged-WebUI health
+checks, and PostgreSQL peer authentication without a database secret. POP3,
+ManageSieve, plaintext client-mail ports, PostgreSQL TCP, and the recovery UI
+are not publicly reachable.
 
-The webserver role additionally supplies sandboxed nginx-core serving HTTPS
-over HTTP/1.1, HTTP/2, and HTTP/3, with bounded journal logging, strict request
-limits, modern TLS defaults, security headers, rate limits, and no version
-disclosure. Its non-root Certbot integration uses HTTP-01, requires the ACME
-`shortlived` profile, and crosses into nginx only through a fixed
-file-triggered validation/reload boundary.
+The complete design and exclusions are documented in
+[`docs/SECURITY-MODEL.md`](./docs/SECURITY-MODEL.md).
 
-The mailserver role supplies the PostgreSQL-only Stalwart package and a
-local-only PostgreSQL server behind a role-specific default-deny firewall. It
-admits only SMTP 25, HTTPS 443, implicit-TLS submission 465, and implicit-TLS
-IMAP 993; POP3, ManageSieve, plaintext client mail ports, PostgreSQL, and
-bootstrap HTTP 8080 remain closed. Stalwart egress is limited to SMTP 25 and
-HTTPS 443, with resolver traffic confined to the loopback systemd-resolved
-TCP proxy stub so Stalwart can validate preserved DNSSEC records for DANE over
-the host's authenticated Cloudflare DoT path. A dedicated SELinux domain
-independently enforces the selected ports, local database socket, and labelled
-file access. Provisioning instructions are installed at
-`/usr/share/doc/particleos/stalwart/README`; the adjacent
-`BACKUP-RECOVERY.md` defines continuous WAL archiving, verified base backups,
-retention constraints, and point-in-time recovery.
+## Trust and Dependencies
 
-See [docs/SECURITY-MODEL.md](./docs/SECURITY-MODEL.md) for trust boundaries,
-GrapheneOS hardening coverage, and deliberate exclusions.
+The image layout is derived from
+[systemd/particleos](https://github.com/systemd/particleos). Applicable server
+and nginx policy is adapted from
+[GrapheneOS/infrastructure](https://github.com/GrapheneOS/infrastructure),
+[GrapheneOS/grapheneos.org](https://github.com/GrapheneOS/grapheneos.org), and
+[secureblue](https://github.com/secureblue/secureblue). Custom ParticleOS is
+not GrapheneOS and is not an official GrapheneOS, Fedora, or systemd project.
+Pinned reference revisions are recorded in [`NOTICE`](./NOTICE).
+
+The independently maintained packages are:
+
+- [custom-hardened_malloc](https://github.com/thefutureisprivate/custom-hardened_malloc)
+- [custom-no_rlimit_as](https://github.com/thefutureisprivate/custom-no_rlimit_as)
+- [custom-ipe-policy](https://github.com/thefutureisprivate/custom-ipe-policy)
+- [custom-stalwart](https://github.com/thefutureisprivate/custom-stalwart)
+
+Release-critical trust roots include Fedora and systemd package signing,
+membership of the `home:thefutureisprivate` OBS project, the pinned source
+commit, the OBS project certificate, the vendored update keyring, reviewed IPE
+source, UEFI firmware, and the VPS provider's hypervisor.
 
 ## Build in OBS
 
-OBS is the authoritative production build environment. This follows the native
-particleOS OBS mechanism documented in the
-[OBS image package format guide](https://www.open-build-service.org/help/manuals/obs-user-guide/cha-obs-package-formats)
-and its
-[SCM build-recipe extraction guide](https://openbuildservice.org/help/manuals/obs-user-guide/cha-obs-concepts).
+OBS is the production build environment. The current project is
+[`home:thefutureisprivate`](https://build.opensuse.org/repositories/home:thefutureisprivate).
 
-1. Create the `stalwart-image`, `stalwart-image-updates`, and
-   `custom-particleos` packages in the
-   [`home:thefutureisprivate`](https://build.opensuse.org/repositories/home:thefutureisprivate)
-   OBS project. Apply
+The project requires these packages:
+
+| OBS package | Purpose | Repository |
+|---|---|---|
+| `custom-particleos` | Builds both complete OS roles | `fedora_44_images` |
+| `stalwart-image` | Immutable recovery seed DDI | `stalwart_seed_images` |
+| `stalwart-image-updates` | Reviewed application update DDIs | `stalwart_images` |
+
+1. Apply [`.obs/project-config.example`](./.obs/project-config.example) and
+   [`.obs/project-meta.example.xml`](./.obs/project-meta.example.xml) to the
+   OBS project.
+2. Apply
    [`.obs/stalwart-image-meta.example.xml`](./.obs/stalwart-image-meta.example.xml)
-   to the seed package so it builds only in the retained
-   `stalwart_seed_images` repository. Apply
+   to `stalwart-image` and
    [`.obs/stalwart-image-updates-meta.example.xml`](./.obs/stalwart-image-updates-meta.example.xml)
-   to the update package so moving application releases build only in
-   `stalwart_images`.
-
-2. Apply [`.obs/project-config.example`](./.obs/project-config.example) as the
-   OBS project configuration and
-   [`.obs/project-meta.example.xml`](./.obs/project-meta.example.xml) as the
-   project metadata before starting either image build. They define the
-   repositories, select the mkosi build type, and select the signed raw
-   checksum repository format for both OS and Stalwart application images.
-
-3. Copy the [Stalwart seed `_service`
-   template](./.obs/stalwart-seed/x86-64/_service.example) into the
-   `stalwart-image` seed package, replace `REPLACE_WITH_REVIEWED_COMMIT` with
-   the full reviewed commit ID, and wait for the signed DDI to publish. The
-   seed repository uses OBS `rebuild="local"`: dependency changes cannot
-   silently rebuild an existing recovery filename, while reviewed source
-   changes still build normally.
-   Independently verify its project signature, embedded dm-verity signature,
-   release metadata, and compressed and raw SHA-256 digests.
-
-   The moving `stalwart-image-updates` package instead uses the
-   [application-image template](./.obs/stalwart-image/x86-64/_service.example).
-   Keeping two subimage definitions prevents a recovery seed from being
-   republished with `UPDATE_KIND=patch`, or an automatic update from being
-   mislabeled as a seed.
-
-4. Record those exact digests in
+   to `stalwart-image-updates`.
+3. Copy [the seed `_service`
+   template](./.obs/stalwart-seed/x86-64/_service.example) into
+   `stalwart-image`, replace `REPLACE_WITH_REVIEWED_COMMIT` with a reviewed
+   immutable commit, and publish the signed seed.
+4. Verify the seed's project signature, embedded dm-verity signature, release
+   metadata, and compressed and raw SHA-256 digests. Record those digests in
    [`mkosi.resources/stalwart-seed/release`](./mkosi.resources/stalwart-seed/release).
-   The generic image package's source service downloads only that seed release
-   and verifies its pinned compressed digest before mkosi runs. The mail image
-   verifies the decompressed digest again before embedding the signed DDI in
-   immutable `/usr`; the first boot copies it to the encrypted persistent root.
-   Keep this package and repository unchanged after the seed is published.
-
-5. Copy the generic [`_service`
-   template](./.obs/fedora/x86-64/_service.example) into the
-   `custom-particleos` package as `_service`. Replace
-   `REPLACE_WITH_REVIEWED_COMMIT` with the full immutable reviewed commit ID.
-   The `obs_scm` service exports the dependency closure as OBS's package recipe
-   while mkosi 26 executes the canonical graph from the exported SCM tree.
-
-6. Keep both Fedora repositories inheriting from
-   `Fedora:44/update`, not the frozen `Fedora:44/standard` release repository.
-   Keep the `system:systemd` Fedora 44 repository ahead of Fedora updates for
-   the current upstream systemd packages selected by
-   [`mkosi.profiles/obs-repos`](./mkosi.profiles/obs-repos). Fedora 44 stable
-   still exposes the older `systemd-sysupdate.service/timer` unit interface;
-   these images require the current
-   `systemd-sysupdate-update.service/timer` interface and carry no
-   compatibility path. The image package set requests Fedora's `kernel-core`;
-   no COPR or custom kernel repository is configured.
-
-   Stalwart is the exception: build its RPM only in the dedicated
-   `stalwart_Fedora_44` repository, which inherits from stable Fedora updates
-   without the live `system:systemd` path. Keep that repository first in the
-   image repository search order. This preserves normal OBS dependency
-   rebuilds while preventing unrelated systemd CI metadata churn from
-   continuously rebuilding the mail server or blocking image publication.
-
-7. Synchronize the reviewed package files and `package-meta.xml` definitions
-   from the dedicated
-   [hardened_malloc](https://github.com/thefutureisprivate/custom-hardened_malloc),
-   [no_rlimit_as](https://github.com/thefutureisprivate/custom-no_rlimit_as),
-   and [IPE policy](https://github.com/thefutureisprivate/custom-ipe-policy)
-   repositories into their matching OBS packages. The IPE repository keeps an
-   immutable link to the reviewed official `system:systemd/ipe-policy`
-   revision; OBS then signs that policy with the same project certificate used
-   by ParticleOS.
-
-   The image repository deliberately excludes the systemd-project build of
-   IPE and gives the ParticleOS base repository priority. Do not enable IPE
-   with a policy signed by a certificate absent from the exclusive UEFI
-   database, and do not replace the pinned IPE link with a floating link.
-
-8. Point `stalwart-image-updates` at each separately reviewed application-image
-   commit. Only this package publishes into the moving `stalwart_images`
-   repository consumed by the on-host updater.
-
-9. Run and commit the source service in the generic image package checkout:
+5. Copy [the application-image `_service`
+   template](./.obs/stalwart-image/x86-64/_service.example) into
+   `stalwart-image-updates` and pin it to each separately reviewed application
+   release.
+6. Copy [the OS `_service`
+   template](./.obs/fedora/x86-64/_service.example) into
+   `custom-particleos`, then replace `REPLACE_WITH_REVIEWED_COMMIT` with the
+   reviewed repository commit.
+7. Synchronize the reviewed recipes from the three dedicated hardening
+   repositories into their matching OBS packages. Keep the IPE link pinned to
+   the reviewed official `system:systemd/ipe-policy` revision.
+8. Run the service and commit the generated OBS sources:
 
    ```sh
    osc service run
@@ -211,107 +178,40 @@ and its
    osc results
    ```
 
-The recipe carries `# needssslcertforbuild`, so OBS supplies the public project
-certificate. Its presence makes [`mkosi.obs.conf`](./mkosi.obs.conf) load the
-upstream `mkosi-obs` build/signing machinery once on the non-installing
-aggregate. [`mkosi.role.obs.conf`](./mkosi.role.obs.conf) applies deferred
-signing and the matching sysupdate publication source independently to each
-complete role. A location-independent adapter invokes the signer from the
-active mkosi installation. OBS signs the bootloader, UKIs, and dm-verity
-metadata without exposing the project private key to this repository.
-That project certificate is the only key enrolled in the image's Secure Boot
-database. Root and swap are bound directly to PCR 7; expected-PCR signing is
-disabled because OBS's RSA-4096 project key is not accepted as an external
-policy key by common TPM2 implementations. The same RSA key remains suitable
-for signing and verifying the IPE policy. The configuration also resets
-`mkosi-obs`'s implicit PCR split artifact so no unusable `.pcrpkey` is
-embedded and auto-combined with the direct PCR 7 policy. The roothash,
-OS-release, and repartition definitions remain split for OBS's two-pass
-dm-verity signing. OBS forces mkosi to create a first-pass SHA256SUMS aggregate,
-which becomes stale when OBS attaches signatures in the second pass. A guarded
-post-output hook discards only that aggregate before publication. Release
-verification uses the project-signed final per-artifact SHA-256 files from OBS.
-The published role manifest intentionally lists the packages added after the
-shared base was copied, matching mkosi's base-tree semantics. The separately
-published `base.manifest.gz` is the full shared package inventory; review both
-manifests for a complete role image. Package-created loose boot artifacts are
-removed at the base boundary so only role-generated, OBS-signed UKIs reach the
-final ESP.
+Keep the Fedora repositories based on `Fedora:44/update`. The
+`system:systemd` Fedora 44 repository supplies the current systemd interface
+required by the images; Fedora's `kernel-core` supplies the kernel. No COPR or
+custom kernel repository is used. The `stalwart_Fedora_44` repository is kept
+separate so unrelated systemd repository changes do not rebuild Stalwart.
 
-For automatic source-service triggers, copy
-[`.obs/workflows.example.yml`](./.obs/workflows.example.yml) to the SCM
-workflow configuration. It triggers only `custom-particleos`, whose service
-remains pinned until its reviewed commit is explicitly advanced. DNS remains a
-definition in the graph but is not an aggregate dependency while it is empty.
+The OS recipe uses `# needssslcertforbuild`. OBS makes only the public project
+certificate available to mkosi, while the project private key remains outside
+the source repository. OBS signs the bootloader, UKIs, dm-verity metadata, and
+published artifact checksums.
 
-## Validate a change
+## Installation
 
-Run the repository checks before updating the OBS package:
+The VPS must provide UEFI Secure Boot, a TPM2-compatible vTPM, and a boot disk
+of at least 8 GiB. Put Secure Boot into setup mode before the first boot so the
+OBS project certificate can become the exclusive database key; then protect
+firmware settings with an administrator password.
 
-```sh
-./scripts/validate.sh
-```
+Write the OBS raw image directly to the boot volume and expand the volume to at
+least 8 GiB before first boot. The production UKI has no interactive or
+destructive installer.
 
-Inspect the production graph and local custom repositories before release:
+The console wizard requires:
 
-```sh
-mkosi --profile=obs-repos summary
-```
+- a new local administrator name;
+- a password of at least 14 characters; and
+- one raw Ed25519 SSH public key.
 
-Static validation also enforces that the base has no final-image hooks, both
-production roles depend on `base` and `initrd`, the legacy repository is
-filtered to Stalwart and only the mail role selects it, and the dormant DNS
-image selects no packages and is not an aggregate dependency.
-
-The checks reject container recipes, Fedora releases other than 44, desktop
-packages, `sudo`, known-password credentials, private-key files, and missing
-security invariants. A successful static check does not replace an OBS build
-and boot test.
-
-For a release, pin the source service to the reviewed commit, build it in OBS,
-inspect the manifest, boot the image with Secure Boot and TPM2 in a disposable
-machine, and verify the effective unit sandboxes with
-`systemd-analyze security`.
-
-Every role release test must also confirm that `resolvectl status` reports DNS
-over TLS enabled and DNSSEC supported/enabled, a valid signed name resolves, a
-deliberately broken DNSSEC name fails, and the firewall exposes no resolver flow
-on port 53.
-
-## Install
-
-The virtual machine must expose UEFI Secure Boot and a TPM2-compatible vTPM.
-Guest microcode packages are intentionally omitted: CPU microcode is the VPS
-hypervisor/provider's responsibility. Put Secure Boot into setup mode before
-the first boot so the OBS project certificate can be enrolled as the exclusive
-Secure Boot database key. Protect the firmware settings with an administrator
-password afterward.
-
-Import or write the OBS raw disk image directly to the VPS boot volume. The
-boot volume must be expanded to at least 8 GiB before the first boot so
-systemd-repart has space to create the 2 GiB encrypted swap and writable root
-partitions. Booting the unexpanded transport image cannot complete
-provisioning. The production UKI intentionally contains no interactive or
-destructive installer profile. On first boot, the console wizard requires a
-new local administrator name, a password of at least 14 characters, and one
-raw Ed25519 SSH public key. It creates an SELinux-labelled home inside the
-TPM2/LUKS-encrypted writable root, adds the account to `wheel` and
-`systemd-journal`, and installs the validated key at mode 0600. No fixed
-account, password, or public key is built into the image.
-
-The password is used only for console and `run0` authentication; SSH remains
-key-only. The public key is not a secret and is available to sshd immediately
-after a cold boot because the persistent root is already unlocked. ParticleOS
-does not use systemd-homed: a password-encrypted homed account generally needs
-that password or another home-unlocking token before a login session can be
-activated, while OpenSSH public-key authentication does not supply it.
-
-The first writable root receives a stable role-specific hostname derived from
-the machine ID (`particle-web-…` or `particle-mail-…`). An administrator may
-replace it with `hostnamectl`; that local setting persists across OS A/B
-updates and rollbacks. Because the role-independent initrd initially sees only
-Fedora's generic fallback, `particleos-hostname.service` re-applies the
-persistent real-root hostname after switch-root and before networking.
+No account, password, SSH key, or private key is built into the image. The
+password is used only for console and `run0` authentication. The public key is
+available to sshd after a cold boot because the encrypted persistent root has
+already been unlocked. ParticleOS does not use systemd-homed: a
+password-encrypted homed account normally needs a home-unlocking credential,
+which an SSH public-key signature does not provide.
 
 Use `run0` for privileged operations:
 
@@ -320,32 +220,18 @@ run0 systemctl --failed
 run0 journalctl --boot
 ```
 
-Published artifacts report either `ParticleOS-Webserver` or
-`ParticleOS-Mailserver` plus their complete image version through
-`hostnamectl`. `ParticleOS-Dnsserver` remains reserved for the empty image
-definition. These values describe the atomic image slot and are separate from
-Fedora's package-compatible `ID=fedora` and `VERSION_ID=44`.
+## Webserver Operations
 
-## Operate the web server
-
-Static content lives in Fedora's SELinux-labelled, root-owned mutable directory
-`/var/www/html`. Replace the placeholder atomically and do not make
-the directory writable by the nginx user:
+Static content is stored in `/var/www/html`. Keep it root-owned and replace
+files atomically:
 
 ```sh
 run0 install -o root -g root -m 0644 index.html /var/www/html/index.html
 ```
 
-TCP ports 80 and 443 and UDP port 443 are enabled by the firewall. Port 80
-exposes only `/.well-known/acme-challenge/` for ACME HTTP-01 and returns 404 for
-every other request until an explicit virtual host is installed. Unknown TLS
-and QUIC names are rejected as well. The supplied domain-specific virtual-host
-template adds a fixed-host HTTP-to-HTTPS redirect without trusting an arbitrary
-Host header.
-
-Point the domain's A and AAAA records at the VPS and confirm port 80 is reachable.
-Then create the ACME account and certificate. Supplying `--agree-tos` is an
-operator decision and is intentionally not built into the image:
+Port 80 serves only `/.well-known/acme-challenge/` until an explicit virtual
+host is installed. Point the domain's A and AAAA records at the VPS, then issue
+the certificate as the non-login Certbot account:
 
 ```sh
 run0 --user=certbot -- certbot certonly \
@@ -354,17 +240,11 @@ run0 --user=certbot -- certbot certonly \
     --agree-tos
 ```
 
-Certbot requires the ACME `shortlived` profile and defaults to the nginx
-webroot, an ECDSA P-384 key, and HTTP-01. The renewal service can write only the
-pre-created `/var/www/html/.well-known/acme-challenge` leaf, not the rest of the
-site. The setgid challenge directory gives new tokens the `nginx` group and
-mode 0640, so workers can serve them without gaining write access. Certbot's
-private state remains owned by the dedicated `certbot` account under
-`/etc/letsencrypt`; nginx's root master can read private keys but its workers
-cannot write them.
+Certbot uses HTTP-01, ECDSA P-384, the nginx webroot, and the ACME
+`shortlived` profile. Agreement to the ACME subscriber terms remains an
+operator decision.
 
-Prepare a local copy of the supplied HTTPS virtual host, replace every
-`example.invalid` with the issued domain, and install that prepared file:
+Prepare the supplied `https.conf`, replace `example.invalid`, and install it:
 
 ```sh
 run0 install -o root -g root -m 0600 \
@@ -376,36 +256,47 @@ run0 --user=certbot -- certbot renew --dry-run
 run0 systemctl status certbot-renew.timer
 ```
 
-The enabled renewal timer uses the same webroot. A successful deployment writes
-a request into `/run/particleos-certbot`; a systemd path unit then runs the
-fixed nginx syntax-check/reload service. Certbot has no access to the systemd
-manager socket. The HTTPS example advertises HTTP/3 and enables HSTS without
-`includeSubDomains` or preload; opt into those only after every subdomain is
-permanently HTTPS-only.
+The virtual-host template advertises HTTP/3 and enables HSTS without
+`includeSubDomains` or preload. Enable those directives only after every
+subdomain is permanently HTTPS-only.
 
-## Remote SSH
+## Mailserver Operations
 
-The socket-activated SSH service is reachable on TCP port 22 from every IPv4
-and IPv6 source. Authentication is restricted to the administrator's raw
-Ed25519 public key; passwords, root login, forwarding, tunnels, and unused
-authentication methods remain disabled. nftables retains a per-source limit on
-new SSH connection attempts so one address cannot consume the entire listener.
+The mail image initializes PostgreSQL 18, creates the unprivileged `stalwart`
+database role, and starts an unprovisioned Stalwart registry in recovery mode.
+Its random temporary administrator credential is written to the protected
+service journal:
 
-## DNS trust and failure mode
+```sh
+run0 journalctl -u stalwart.service
+```
+
+Access `localhost:8080` through the console or an SSH tunnel. Create a
+permanent administrator and configure the hostname, TLS certificates, Ed25519
+DKIM keys, domains, relay policy, and abuse controls before accepting mail.
+
+Installed operational documentation covers provisioning, the health gate,
+WAL-based point-in-time recovery, and independent application-image updates:
+
+```text
+/usr/share/doc/particleos/stalwart/README
+/usr/share/doc/particleos/stalwart/BACKUP-RECOVERY.md
+/usr/share/doc/particleos/stalwart/IMAGE-UPDATES.md
+```
+
+## SSH and DNS
+
+SSH listens on TCP 22 for every IPv4 and IPv6 source. Authentication accepts
+only the provisioned Ed25519 key. nftables applies per-source limits to new
+connections.
 
 `systemd-resolved` is the sole host resolver. It authenticates Cloudflare's
-IPv4 and IPv6 resolver endpoints as `cloudflare-dns.com` over TCP/853 and
-performs DNSSEC validation locally. DHCPv4, DHCPv6, and IPv6 Router
-Advertisements cannot replace those servers; LLMNR, multicast DNS, fallback
-resolvers, and plaintext DNS egress are disabled.
+IPv4 and IPv6 endpoints as `cloudflare-dns.com` over TCP 853 and validates
+DNSSEC locally. DHCP, Router Advertisements, LLMNR, multicast DNS, fallback
+resolvers, and plaintext DNS cannot replace or bypass that path.
 
-This deliberately makes Cloudflare and the Web PKI additional availability and
-privacy trust dependencies. If a VPS provider blocks TCP/853, DNS fails closed
-instead of falling back to port 53. Changing providers requires a signed image
-change to both the resolved configuration and the destination-address firewall
-rules.
-
-Inspect the effective state with:
+This policy fails closed when TCP 853, certificate validation, or DNSSEC
+validation fails. Inspect it with:
 
 ```sh
 resolvectl status
@@ -413,83 +304,59 @@ resolvectl query cloudflare.com
 resolvectl query dnssec-failed.org
 ```
 
-The last command must fail DNSSEC validation.
+The final command must fail DNSSEC validation.
 
-## Updates and customization
+## Updates and Rollback
 
-The retained particleOS `systemd-sysupdate` transfer definitions update the A/B
-`/usr`, verity metadata, and UKI artifacts produced by OBS. Their artifact
-patterns derive from `%M`, so the current image can consume only its
-matching `ParticleOS-Webserver` or `ParticleOS-Mailserver` update namespace.
-The DNS namespace remains reserved and unpublished.
-
-Stalwart itself has an independent application-image lifecycle. The host OS
-contains only its fixed UID/GID, systemd unit, configuration, SELinux policy,
-PostgreSQL integration, and image selector. The executable, allocator, and
-WebUI live in a signed EROFS `RootImage=` DDI with embedded dm-verity metadata.
-The selected image and retained previous image live on the encrypted persistent
-root, so an OS A/B rollback continues with the same selected Stalwart release.
-See `IMAGE-UPDATES.md` in the mailserver image for the signed host/database ABI
-contract and explicit patch-only automatic activation rules.
-Publishing a new compatible patch advances only the `stalwart-image-updates`
-source revision and signed application repository; it does not rebuild
-ParticleOS.
-The OS seed remains a recovery baseline. Minor/major or migration-bearing
-images must first gain a reviewed database-aware transition and rollback path.
-
-OS updates are fully unattended. `systemd-sysupdate-update.timer` periodically
-stages a complete signed version. PID 1 publishes only that service's dynamic
-cgroup ID into nftables; its new TCP/443 connections are rate limited, and
-generic root processes receive no corresponding egress. The separate
-`systemd-sysupdate-reboot.timer` checks during the 04:10–04:40 window and
-reboots only when the newest installed version is newer than the booted
-version. Inspect or trigger the pipeline through its units:
+`systemd-sysupdate` stages signed, complete A/B `/usr`, verity, and UKI
+artifacts from the role-specific OBS update repository. The update and reboot
+timers are unattended; reboot occurs only when an installed version is newer
+than the booted version.
 
 ```sh
 run0 systemctl list-timers 'systemd-sysupdate-*'
 run0 systemctl start systemd-sysupdate-update.service
 ```
 
-New UKIs start with three boot attempts. On a counted boot, the generic failed
-unit checker must complete before `boot-complete.target`; the webserver role
-also validates nginx's configuration and an actual HTTP response on its local
-port 80 listener. The mailserver role verifies PostgreSQL peer authentication,
-Stalwart's post-migration mode, and the local systemd-resolved interface without
-depending on Internet availability. It then performs bounded local protocol
-checks: the recovery WebUI while unprovisioned, or SMTP/SMTPS/IMAPS/HTTPS, TLS
-certificates, security headers, and the exact packaged WebUI in normal mode. A
-failed gate is not blessed and reboots the counted slot. The same gate also
-runs after independent Stalwart-image activation; application failure restores
-the retained image without changing the OS slot.
-After three failed attempts, systemd-boot selects the previous blessed UKI and
-A/B `/usr` set. The forced-reboot action is conditional on the
-`LoaderBootCountPath` EFI variable, so an already blessed normal boot cannot
-fall into a reboot loop from this rollback mechanism.
+New UKIs receive three boot attempts. The common health gate rejects failed
+units; the webserver also validates nginx configuration and a real local HTTP
+response. The mailserver checks PostgreSQL peer authentication, migration
+state, the local resolver contract, local protocols, TLS certificates,
+security headers, and the exact packaged WebUI without depending on Internet
+availability. An unhealthy counted slot is not blessed, so systemd-boot
+returns to the previous complete OS version.
 
-The image retains `systemd-pull` from `systemd-container` solely as sysupdate's
-HTTPS callout and removes the package's container, VM, machine, import-daemon,
-D-Bus, NSS, and activation interfaces. GnuPG is retained because systemd-pull
-verifies the published `SHA256SUMS.asc`; its vendor keyring is replaced with
-the pinned `home:thefutureisprivate` OBS project key. `libcurl-minimal` supplies
-systemd-pull's dynamically loaded HTTPS transport; the curl command-line client
-is not installed. GnuPG's agent, keyserver, keybox, TPM, user-activation, and
-auxiliary verification tools are removed; only the `gpg`/`gpg2` verifier and
-its runtime libraries remain.
+Stalwart has a separate signed-image lifecycle. Only explicitly compatible
+patch releases with unchanged database format and no migration are activated
+automatically. A failed application health check restores the retained
+Stalwart image without changing the OS slot. OS rollback preserves the
+currently selected Stalwart image.
 
-The update source is fixed to the `home:thefutureisprivate` OBS project's
-`*_images` repository. The separate `system:systemd` repository remains only a
-build-time source for the required current systemd packages. Fedora packages
-use the HTTPS-only Fedora primary mirror rather than mirror-manager responses
-that may contain plaintext transports. Treat OBS project membership, the
-project certificate, the pinned source-service revision, the vendored
-ParticleOS OBS repository key, and Fedora/systemd repositories as
-release-critical trust roots.
+Immutable policy under `/usr/lib/particleos` changes only through a new signed
+OS image. Mutable role data remains on the TPM2-encrypted persistent root.
 
-Configuration under `/usr/lib/particleos` is immutable and changes through a
-new signed image. The administrator's encrypted-root home and generated SSH
-host key are shared mutable surfaces. The webserver role additionally permits
-Certbot state, nginx virtual hosts, and web content. The mailserver role permits
-only its labelled Stalwart configuration/state and PostgreSQL data; the dormant
-DNS image adds no package or mutable role policy. Add required virtual hardware
-drivers to the early module list before building: module loading is permanently
-disabled for the rest of each boot.
+## Verification
+
+Run static checks before advancing the OBS source revision:
+
+```sh
+./scripts/validate.sh
+mkosi --profile=obs-repos summary
+```
+
+Static validation checks the dependency graph, Fedora release, repository
+selection, package scope, absence of container recipes and credentials, and
+the required security invariants. It does not replace an OBS build and boot
+test.
+
+A release test must verify the OBS signatures and manifests, boot with Secure
+Boot and TPM2, confirm dm-verity, IPE and SELinux enforcement, exercise the
+role health gate, test update and rollback, inspect exposed ports, validate
+DNS-over-TLS/DNSSEC behavior, and review exposed service sandboxes with
+`systemd-analyze security`.
+
+## Licensing
+
+The repository is licensed under the GNU Lesser General Public License 2.1.
+See [`LICENSE`](./LICENSE). Upstream derivations and their licenses are listed
+in [`NOTICE`](./NOTICE).

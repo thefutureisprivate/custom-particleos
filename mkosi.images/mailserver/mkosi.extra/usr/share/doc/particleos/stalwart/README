@@ -1,90 +1,121 @@
-ParticleOS Stalwart provisioning
-================================
+<h1 align="center">Stalwart on ParticleOS</h1>
 
-The image owns Stalwart's database dependency. On first boot it initializes a
-checksummed PostgreSQL cluster in /var/lib/pgsql, disables every TCP listener,
-creates the unprivileged stalwart database role, and authenticates the
-stalwart OS account through PostgreSQL peer authentication on
-/run/postgresql. There is no database password or environment file.
+<p align="center">
+  Provisioning and diagnostics for the signed Stalwart mail service image.
+</p>
 
-PostgreSQL, role provisioning, and Stalwart are enabled by the OS. The
-executable, allocator libraries, and WebUI run from the signed, release-pinned
+## Table of Contents
+
+- [Runtime Layout](#runtime-layout)
+- [Initial Provisioning](#initial-provisioning)
+- [Network and DNS](#network-and-dns)
+- [Health Gate](#health-gate)
+- [WebUI Integrity](#webui-integrity)
+- [Storage and Recovery](#storage-and-recovery)
+- [Diagnostics](#diagnostics)
+
+## Runtime Layout
+
+ParticleOS initializes a checksummed PostgreSQL 18 cluster in
+`/var/lib/pgsql`, disables its TCP listeners, creates the unprivileged
+`stalwart` database role, and authenticates the matching OS account through
+peer authentication on `/run/postgresql`. There is no database password or environment file.
+
+PostgreSQL and the host integration are part of the OS. The executable, allocator libraries, and WebUI run from the signed, release-pinned
 service image selected at `/var/lib/particleos/stalwart/current.raw`; they are
-not installed in the host `/usr`. A fresh
-registry starts with `STALWART_RECOVERY_MODE=1`; the service journal contains a
-random temporary `admin` credential which is valid only on the loopback-only
-recovery UI. Retrieve it locally with:
+not installed in the host `/usr`. The DDI is EROFS with embedded dm-verity
+metadata and an OBS-project root-hash signature verified by PID 1.
 
-    run0 journalctl -u stalwart.service
+## Initial Provisioning
 
-Complete application bootstrap as follows:
+A fresh registry starts with `STALWART_RECOVERY_MODE=1`. Stalwart writes a
+random temporary `admin` credential to the protected service journal:
 
-1. Connect through the console or an SSH tunnel to localhost:8080. Port 8080
-   is intentionally never admitted by the public firewall.
-2. Create the permanent administrator and configure the production hostname,
-   TLS certificates, Ed25519 DKIM keys, domains, relay policy, and abuse
-   controls before accepting production mail.
-3. Restart Stalwart after creating the password-bearing administrator. The
-   ParticleOS auto-recovery policy then selects the normal protocol profile;
-   an unprovisioned registry remains in recovery mode.
+```sh
+run0 journalctl -u stalwart.service
+```
 
-The mail health gate reads Stalwart's post-migration mode marker on every boot
-and after every application-image activation. In
-recovery mode it validates the database and the loopback recovery WebUI. In
-normal mode it performs bounded SMTP, SMTPS, IMAPS and HTTPS exchanges on IPv4
-and IPv6, validates each TLS certificate, checks browser security headers, and
-compares the served WebUI body with the digest generated from the exact RPM
-payload. Its stable exit classes distinguish listener, TLS, certificate,
-protocol, datastore and WebUI failures.
+1. Connect through the console or an SSH tunnel to `localhost:8080`. The
+   public firewall never admits port 8080.
+2. Create the permanent administrator.
+3. Configure the production hostname, TLS certificates, Ed25519 DKIM keys,
+   domains, relay policy, and abuse controls before accepting mail.
+4. Restart Stalwart. A registry with a non-expired password-bearing
+   administrator selects the normal protocol profile; an unprovisioned
+   registry remains in recovery mode.
+
+## Network and DNS
 
 The public firewall admits only TCP 25, 443, 465, and 993. POP3, ManageSieve,
-plaintext client protocols, PostgreSQL, and bootstrap TCP 8080 are closed.
-Stalwart may create external connections only to SMTP TCP 25 and HTTPS TCP 443.
-DNS packets are limited to loopback and therefore must pass through
-systemd-resolved. Ordinary OS lookups use resolved's full validating stub.
-Stalwart uses resolved's loopback-only `127.0.0.54:53` TCP proxy stub so DNS messages still
-cross authenticated Cloudflare DNS-over-TLS while Stalwart validates the
-preserved DNSSEC records locally for DANE. Blocked DoT or failed validation
-makes mail resolution fail closed.
+plaintext client protocols, PostgreSQL, and recovery TCP 8080 remain closed.
+Stalwart may create external connections only to SMTP TCP 25 and HTTPS TCP
+443.
 
-Boot-health verifies only the local systemd-resolved service and TCP proxy
-contract. It deliberately does not query an Internet name: Cloudflare or
-network outages are runtime delivery failures handled by normal mail retry
-semantics and must not consume counted OS boot attempts. ParticleOS disables
-`systemd-networkd-wait-online.service`; Stalwart and the counted health gate
-start from local dependencies and bind their sockets even when the VPS has no
-carrier or address. A unit condition also makes vendor or stale enablement of
-the wait service non-blocking. Network configuration continues asynchronously.
+All DNS traffic stays on loopback and passes through `systemd-resolved`.
+Stalwart uses the `127.0.0.54:53` TCP proxy so DNS messages cross the host's
+authenticated Cloudflare DNS-over-TLS path while the records required for DANE
+remain available to Stalwart's own DNSSEC validation. Blocked DoT or failed
+validation fails closed.
 
-The WebUI is a checksum-pinned payload inside the signed, dm-verity-protected
-service image. Stalwart rejects every application-bundle URL except
-`file:///usr/share/stalwart/webui.zip` and reloads that file on every process
-start instead of consulting its mutable blob cache, so the WebUI is atomic with
-the selected Stalwart image rather than with an OS A/B slot. The expected
-digests are copied from that same mounted image into the private runtime
-directory before startup and are checked by the health gate.
+The boot gate checks only the local resolver listener and a bounded localhost
+transaction. It never queries an Internet name, so a provider, network, or
+Cloudflare outage cannot consume an otherwise healthy counted OS boot attempt.
+Normal mail retry semantics handle those runtime outages.
 
-PostgreSQL continuous WAL archiving, verified base backups, retention rules and
-the recovery procedure are documented in BACKUP-RECOVERY.md. PITR stays off
-until an operator provisions and activates a separate encrypted backup mount.
+## Health Gate
 
-The particleos_stalwart SELinux module confines the service to its labelled
-configuration, WebUI, state, logs, runtime and private temporary files; the
-PostgreSQL Unix socket; the system resolver; and the selected SMTP, IMAP and
-HTTP port types. Diagnose the mail stack with:
+The health gate runs on every counted OS boot and after every application-image
+activation. Recovery mode checks the database and loopback WebUI. Normal mode
+performs bounded SMTP, SMTPS, IMAPS, and HTTPS exchanges over IPv4 and IPv6,
+validates TLS certificates, checks browser security headers, and compares the
+served WebUI with the digest generated from the mounted image.
 
-    run0 systemctl status postgresql.service particleos-stalwart-database.service stalwart.service
-    run0 systemctl start particleos-mailserver-health.service
-    run0 journalctl -u particleos-mailserver-health.service
-    run0 -u stalwart psql --host=/run/postgresql --dbname=stalwart --command='SELECT 1'
+Stable exit codes identify the failed layer:
 
-Independent application-image acquisition, compatibility metadata, atomic
-selection, and rollback are documented in `IMAGE-UPDATES.md`.
+| Exit code | Failure |
+|---:|---|
+| 10 | Listener absent |
+| 20 | TLS handshake |
+| 30 | Certificate validation |
+| 40 | Protocol exchange |
+| 50 | Datastore |
+| 60 | WebUI mismatch |
 
-Health exit codes are 10 listener absent, 20 TLS failure, 30 certificate
-failure, 40 protocol failure, 50 datastore failure and 60 WebUI mismatch.
+Migration errors leave Stalwart failed instead of inactive-successful, so
+systemd restart and health handling remain effective.
 
-Changing to a remote database, adding protocols, or removing the loopback
-bootstrap listener changes the appliance security and health model. Do that
-only through a reviewed signed image change covering nftables, SELinux,
-credentials, service ordering, health checks, and documentation.
+## WebUI Integrity
+
+The WebUI is checksum-pinned inside the signed service image. Stalwart accepts
+only `file:///usr/share/stalwart/webui.zip` and reloads it on every process
+start instead of consulting a mutable application cache. The executable and
+WebUI are therefore atomic with the selected Stalwart image, independently of
+the OS A/B slot.
+
+## Storage and Recovery
+
+Application data lives in the local PostgreSQL cluster. Continuous WAL
+archiving, verified base backups, retention rules, and point-in-time recovery
+are documented in [`BACKUP-RECOVERY.md`](./BACKUP-RECOVERY.md). PITR remains
+disabled until an operator mounts independent encrypted backup storage.
+
+Signed application-image acquisition, compatibility metadata, atomic
+selection, and rollback are documented in
+[`IMAGE-UPDATES.md`](./IMAGE-UPDATES.md).
+
+## Diagnostics
+
+The `particleos_stalwart` SELinux policy limits Stalwart to labelled
+configuration, state, log, runtime, and temporary paths; the PostgreSQL Unix
+socket; the system resolver; and the selected SMTP, IMAP, and HTTP port types.
+
+```sh
+run0 systemctl status postgresql.service particleos-stalwart-database.service stalwart.service
+run0 systemctl start particleos-mailserver-health.service
+run0 journalctl -u particleos-mailserver-health.service
+run0 -u stalwart psql --host=/run/postgresql --dbname=stalwart --command='SELECT 1'
+```
+
+Changing the database location, public protocols, or recovery-listener policy
+requires a signed OS change covering nftables, SELinux, credentials, service
+ordering, health checks, and this operational contract.

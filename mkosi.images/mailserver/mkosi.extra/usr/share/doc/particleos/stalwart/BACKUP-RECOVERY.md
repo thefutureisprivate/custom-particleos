@@ -1,109 +1,153 @@
-# ParticleOS mailserver backup and point-in-time recovery
+<h1 align="center">PostgreSQL Backup and Recovery</h1>
 
-All mutable Stalwart application state is stored in the appliance-owned local
-PostgreSQL cluster. ParticleOS therefore uses PostgreSQL base backups plus a
-continuous WAL archive as its supported point-in-time recovery (PITR) design.
-The immutable OS, Stalwart binary, WebUI and static database policy remain in
-the signed image and are not copied into an application backup.
+<p align="center">
+  Verified base backups and continuous WAL archiving for point-in-time recovery.
+</p>
 
-Logical `pg_dump` exports can be useful for inspection, but they are not a PITR
-substitute. A recoverable set consists of a `pg_basebackup` directory, its
-verified `backup_manifest`, and every archived WAL/history file needed from
-the beginning of that backup through the desired recovery time.
+## Table of Contents
 
-## Storage and activation
+- [Recovery Model](#recovery-model)
+- [Backup Storage](#backup-storage)
+- [Enable PITR](#enable-pitr)
+- [Operations and Retention](#operations-and-retention)
+- [Point-in-Time Recovery](#point-in-time-recovery)
+- [Validation](#validation)
 
-PITR is deliberately not activated until independent storage is provisioned.
-Use an encrypted local volume whose contents are also replicated to protected
-off-site storage. A directory on the ParticleOS root/data filesystem is
-rejected because it would share the server's failure domain.
+## Recovery Model
 
-1. Provision the filesystem persistently at `/var/lib/pgsql/backup`. Its mount
-   must be available before the backup services start.
-2. After mounting it, set its owner and SELinux label:
+All mutable Stalwart application data is stored in the appliance-owned local
+PostgreSQL 18 cluster. The supported point-in-time recovery (PITR) set consists
+of:
 
-       run0 chown postgres:postgres /var/lib/pgsql/backup
-       run0 chmod 0700 /var/lib/pgsql/backup
-       run0 restorecon -RF /var/lib/pgsql/backup
+- one verified `pg_basebackup` directory;
+- its verified `backup_manifest`; and
+- every archived WAL and timeline-history file required from the start of that
+  backup through the selected recovery target.
 
-3. Enable continuous archiving and synchronously create the first verified
-   recovery point:
+The immutable OS, Stalwart executable, WebUI, and static database policy remain
+in signed images and are not application-backup contents. A logical `pg_dump`
+can aid inspection but is not a PITR substitute.
 
-       run0 systemctl start particleos-postgresql-pitr-enable.service
-       run0 journalctl -u particleos-postgresql-pitr-enable.service
+## Backup Storage
 
-4. Only after that service succeeds, enable weekly verified base backups:
+PITR stays disabled until independent storage is mounted at
+`/var/lib/pgsql/backup`. Use a dedicated encrypted filesystem and replicate it
+to protected off-site storage. The activation service rejects a directory on
+the ParticleOS root/data filesystem because it shares the VPS failure domain.
 
-       run0 systemctl enable --now particleos-postgresql-basebackup.timer
+After mounting the filesystem:
+
+```sh
+run0 chown postgres:postgres /var/lib/pgsql/backup
+run0 chmod 0700 /var/lib/pgsql/backup
+run0 restorecon -RF /var/lib/pgsql/backup
+```
+
+The mount must be available before backup services start and must retain the
+`postgresql_db_t` SELinux label.
+
+## Enable PITR
+
+Enable WAL archiving and create the first synchronous verified recovery point:
+
+```sh
+run0 systemctl start particleos-postgresql-pitr-enable.service
+run0 journalctl -u particleos-postgresql-pitr-enable.service
+```
+
+Only after that service succeeds, enable weekly verified base backups:
+
+```sh
+run0 systemctl enable --now particleos-postgresql-basebackup.timer
+```
 
 The activation marker is stored in PostgreSQL's data directory, not on the
-backup mount. If the mount later disappears, WAL archiving returns failure and
-PostgreSQL retains unarchived WAL locally for retry. Monitor free space,
-`pg_stat_archiver`, the timer/service result, and the appearance of new files
-under `backup/wal` and `backup/base`.
+backup mount. If the mount disappears, archiving fails and PostgreSQL retains
+unarchived WAL locally for retry instead of silently discarding it.
 
-The timer never removes backups or WAL. Keep at least two verified base
-backups, replicate them and the continuous WAL stream off the VPS, and delete
-an old WAL segment only when no retained base backup can require it. Treat the
-archive like the live mail database: it contains message bodies, credentials,
-keys and personal data, so enforce encryption, access control and lifecycle
-policy on every replica.
+## Operations and Retention
 
 Create an on-demand verified base backup with:
 
-    run0 systemctl start particleos-postgresql-basebackup.service
+```sh
+run0 systemctl start particleos-postgresql-basebackup.service
+```
 
-Each base backup is checked against its SHA-256 manifest and its required WAL
-is parsed with the matching PostgreSQL `pg_waldump`. The latter is why the
-otherwise optional `postgresql-contrib` RPM is part of the mail image. No
-contrib extension is created in either database.
+Each base backup is checked against its SHA-256 manifest. Its required WAL is
+parsed with PostgreSQL 18's matching `pg_waldump`; this is why
+`postgresql-contrib` is installed. No contrib extension is created in either
+database.
 
-Regularly copy a complete recovery set to an isolated test system and perform
-the restore below. A backup that has only been created, but never restored and
-protocol-tested, is not considered verified operationally.
+Monitor:
 
-## Point-in-time recovery
+- free space on the backup mount and live PostgreSQL volume;
+- `pg_stat_archiver`;
+- timer and service results; and
+- new files below `backup/wal` and `backup/base`.
 
-The supplied preparation helper refuses a running database, refuses backup
-paths outside the mounted archive, verifies the backup manifest, validates the
-UTC target format and retains the old cluster under a timestamped quarantine
-name. Recovery creates a new PostgreSQL timeline; keep its history file.
+The timer never removes backups or WAL. Keep at least two verified base
+backups. Delete a WAL segment only after confirming that no
+retained base backup can require it. The archive contains message bodies,
+credentials, keys, and personal data; apply encryption, access control, and a
+documented lifecycle to every replica.
 
-1. Record the UTC recovery target and chosen verified base backup. The base
-   must precede the target and its required WAL chain must be continuous.
-2. Stop application access and the database:
+## Point-in-Time Recovery
 
-       run0 systemctl stop stalwart.service
-       run0 systemctl stop postgresql.service
+The preparation helper refuses a running database, rejects backup paths
+outside the mounted archive, verifies the backup manifest, validates the UTC
+target, and quarantines the old cluster under a timestamped name. PostgreSQL
+creates a new timeline; preserve its history file.
 
-3. Prepare either a point-in-time target or the end of the available archive:
+1. Select a verified base backup that precedes the target and confirm that its
+   WAL chain is continuous.
+2. Stop Stalwart and PostgreSQL:
 
-       run0 /usr/lib/particleos/postgresql/prepare-recovery \
-           /var/lib/pgsql/backup/base/20260815T120000Z \
-           2026-08-15T12:34:56Z
+   ```sh
+   run0 systemctl stop stalwart.service
+   run0 systemctl stop postgresql.service
+   ```
+
+3. Prepare the recovery. Replace the example path and timestamp with the
+   selected recovery set and UTC target:
+
+   ```sh
+   run0 /usr/lib/particleos/postgresql/prepare-recovery \
+       /var/lib/pgsql/backup/base/YYYYMMDDTHHMMSSZ \
+       YYYY-MM-DDTHH:MM:SSZ
+   ```
 
    Use `latest` as the second argument only when replaying every available WAL
    record is intended.
-4. Start PostgreSQL alone and inspect its recovery journal:
+4. Start PostgreSQL alone and inspect recovery:
 
-       run0 systemctl start postgresql.service
-       run0 journalctl -u postgresql.service
-       run0 -u postgres psql --host=/run/postgresql --dbname=postgres \
-           --command='SELECT pg_is_in_recovery(), now()'
+   ```sh
+   run0 systemctl start postgresql.service
+   run0 journalctl -u postgresql.service
+   run0 -u postgres psql --host=/run/postgresql --dbname=postgres \
+       --command='SELECT pg_is_in_recovery(), now()'
+   ```
 
-5. Validate the selected Stalwart data, administrator records, domains and mail
-   state before reopening application access. If the target is wrong, stop
-   PostgreSQL, restore the retained `data.pre-pitr.*` directory and retry from
-   the untouched base backup on a new timeline.
-6. After validation, remove the one-shot recovery configuration, preserve the
-   quarantined old cluster until the incident is closed, then start Stalwart:
+5. Validate administrator records, domains, messages, queues, and the selected
+   recovery target before reopening application access. If the target is
+   wrong, stop PostgreSQL, restore the retained `data.pre-pitr.*` cluster, and
+   retry from the untouched base backup on a new timeline.
+6. After validation, remove the one-shot recovery configuration, retain the
+   quarantined old cluster until the incident is closed, and restart the mail
+   service:
 
-       run0 rm /var/lib/pgsql/data/conf.d/particleos-recovery.conf
-       run0 systemctl start stalwart.service
-       run0 systemctl start particleos-mailserver-health.service
+   ```sh
+   run0 rm /var/lib/pgsql/data/conf.d/particleos-recovery.conf
+   run0 systemctl start stalwart.service
+   run0 systemctl start particleos-mailserver-health.service
+   ```
 
-The immutable setup service reapplies ParticleOS' current PostgreSQL policy and
-strict `pg_hba.conf` before every database start. WAL recovery restores database
-changes; it intentionally does not restore OS configuration files. Rebuild or
-roll back the signed OS separately if the incident also requires an OS version
-change.
+The immutable setup service reapplies the current PostgreSQL policy and strict
+`pg_hba.conf` before every database start. WAL recovery restores database
+changes only. Roll back or rebuild the signed OS separately when an incident
+also requires an OS change.
+
+## Validation
+
+Regularly restore a complete recovery set on an isolated system, start the
+mail services, and perform bounded protocol tests. A backup that has only been
+created, but never restored and exercised, is not operationally verified.
