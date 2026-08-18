@@ -1,8 +1,10 @@
 [Unit]
 Description=Apply the persistent ParticleOS hostname after switch-root
 Documentation=man:hostnamectl(1) man:hostname(5)
-Wants=systemd-hostnamed.service network-pre.target
-After=local-fs.target systemd-hostnamed.service
+# systemd-hostnamed intentionally has DefaultDependencies=no. Do not pull it
+# into the initrd lifetime; hostnamectl activates a fresh instance on demand.
+Wants=network-pre.target
+After=local-fs.target
 Before=network-pre.target
 ConditionPathExists=/etc/hostname
 
