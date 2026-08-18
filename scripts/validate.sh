@@ -169,7 +169,7 @@ for role in "${roles[@]}"; do
     require_fixed "systemd.unit=system-install.target" "$installer_uki"
     require_fixed "systemd.mask=systemd-firstboot.service" "$installer_uki"
     require_fixed "rd.systemd.mask=systemd-repart.service" "$installer_uki"
-    require_fixed "systemd.mount-extra=/usr/share/factory/etc/selinux:/etc/selinux:none:bind,ro,nosuid,nodev,noexec" "$installer_uki"
+    require_fixed "systemd.mount-extra=/usr/share/factory/etc/selinux:/etc/selinux:none:bind,ro,nosuid,nodev,noexec,x-initrd.mount" "$installer_uki"
     require_fixed "systemd.image_policy=esp=unprotected" "$installer_uki"
     require_fixed "systemd.image_filter=usr=${role_image_ids[$role]}_*" "$installer_uki"
 done

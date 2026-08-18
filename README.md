@@ -210,7 +210,8 @@ media and boot the default profile from the target disk.
 
 The installer keeps SELinux enforcing. Its temporary root read-only bind
 mounts the labelled factory policy from the signed `/usr`; the bind is
-`nosuid,nodev,noexec` and is discarded with the installation environment.
+`nosuid,nodev,noexec`, explicitly ordered into the initrd, and discarded with
+the installation environment.
 
 The raw image may still be written directly to the final boot volume when a VPS
 provider cannot attach installation media. Expand that volume to at least 8

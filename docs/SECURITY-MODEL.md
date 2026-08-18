@@ -125,8 +125,9 @@ switch-root.
 The installer profile has no persistent root to supply `/etc/selinux`. During
 its initrd boot, `systemd-fstab-generator` bind mounts the labelled factory
 policy from the signed `/usr` into the temporary root as read-only,
-`nosuid,nodev,noexec` content before switch-root. The installer therefore does
-not need a permissive or SELinux-disabled compatibility path.
+`nosuid,nodev,noexec` content. The `x-initrd.mount` option makes this a required
+pre-switch-root mount instead of a main-system mount. The installer therefore
+does not need a permissive or SELinux-disabled compatibility path.
 
 Because `/usr` is `nosuid`, service-domain transitions require explicit
 `process2:nosuid_transition` permissions. ParticleOS grants only the named
