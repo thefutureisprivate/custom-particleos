@@ -20,7 +20,6 @@ partuuid=${partuuid,,}
 }
 
 readonly source_device="/dev/disk/by-partuuid/${partuuid}"
-udevadm settle --timeout=10
 [[ -b $source_device ]] || {
     printf 'The UKI source ESP %s is unavailable.\n' "$source_device" >&2
     exit 1

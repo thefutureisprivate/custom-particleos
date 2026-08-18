@@ -84,6 +84,8 @@ admin_firstboot_unit=mkosi.extra/usr/lib/systemd/system/particleos-admin-firstbo
 firstboot_dropin=mkosi.extra/usr/lib/systemd/system/systemd-firstboot.service.d/40-particleos.conf
 installer_mount=mkosi.extra/usr/lib/particleos/installer-mount-source-esp
 installer_mount_unit=mkosi.extra/usr/lib/systemd/system/particleos-installer-source-esp.service
+installer_selinux_label_unit=mkosi.extra/usr/lib/systemd/system/particleos-installer-selinux-label.service
+installer_selinux_label_ordering=mkosi.extra/usr/lib/systemd/system/systemd-tmpfiles-setup-dev-early.service.d/40-particleos-installer-selinux.conf
 sysinstall_dropin=mkosi.extra/usr/lib/systemd/system/systemd-sysinstall.service.d/40-particleos-source-esp.conf
 installer_tmpfiles=mkosi.extra/usr/lib/tmpfiles.d/particleos-installer.conf
 homed_config=mkosi.extra/usr/lib/systemd/homed.conf.d/40-particleos.conf
@@ -135,7 +137,7 @@ done
 require_fixed 'StubDevicePartUUID-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f' "$installer_mount"
 require_fixed "tail --bytes=+5" "$installer_mount"
 require_fixed "tr -d '\\000'" "$installer_mount"
-require_fixed 'udevadm settle --timeout=10' "$installer_mount"
+reject_fixed 'udevadm settle' "$installer_mount"
 require_fixed 'systemd-mount' "$installer_mount"
 require_fixed '--options=ro,nosuid,nodev,noexec' "$installer_mount"
 require_fixed 'Requires=particleos-installer-source-esp.service' "$sysinstall_dropin"
@@ -143,6 +145,20 @@ require_fixed 'After=particleos-installer-source-esp.service' "$sysinstall_dropi
 require_fixed 'Before=systemd-sysinstall.service' "$installer_mount_unit"
 require_fixed 'After=systemd-tmpfiles-setup.service systemd-udev-settle.service' "$installer_mount_unit"
 require_fixed 'CapabilityBoundingSet=' "$installer_mount_unit"
+require_fixed 'ConditionKernelCommandLine=root=tmpfs' "$installer_selinux_label_unit"
+require_fixed 'ConditionSecurity=selinux' "$installer_selinux_label_unit"
+require_fixed 'ExecStart=/usr/sbin/restorecon / /bin /lib /lib64 /sbin /etc' "$installer_selinux_label_unit"
+reject_fixed 'restorecon[[:space:]]+(-[^[:space:]]*[RF]|--recursive)' "$installer_selinux_label_unit"
+for installer_label_before in \
+        systemd-modules-load.service \
+        systemd-sysusers.service \
+        systemd-tmpfiles-setup-dev-early.service \
+        systemd-udevd.service \
+        systemd-userdbd.service; do
+    require_fixed "Before=$installer_label_before" "$installer_selinux_label_unit"
+done
+require_fixed 'Requires=particleos-installer-selinux-label.service' "$installer_selinux_label_ordering"
+require_fixed 'After=particleos-installer-selinux-label.service' "$installer_selinux_label_ordering"
 require_fixed 'd /efi 0755 root root -' "$installer_tmpfiles"
 
 for role in "${roles[@]}"; do

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+[Unit]
+Description=Label the volatile ParticleOS installer root
+Documentation=https://github.com/thefutureisprivate/custom-particleos/
+DefaultDependencies=no
+ConditionKernelCommandLine=root=tmpfs
+ConditionSecurity=selinux
+Before=systemd-modules-load.service
+Before=systemd-sysusers.service
+Before=systemd-tmpfiles-setup-dev-early.service
+Before=systemd-udevd.service
+Before=systemd-userdbd.service
+
+[Service]
+Type=oneshot
+# The tmpfs root is created after the immutable factory skeleton was labelled.
+# Relabel only the mount point and merged-/usr links created by the initrd; PID
+# 1 and tmpfiles label the remaining runtime paths through their normal paths.
+ExecStart=/usr/sbin/restorecon / /bin /lib /lib64 /sbin /etc

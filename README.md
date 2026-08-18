@@ -211,7 +211,12 @@ media and boot the default profile from the target disk.
 The installer keeps SELinux enforcing. Its temporary root read-only bind
 mounts the labelled factory policy from the signed `/usr`; the bind is
 `nosuid,nodev,noexec`, explicitly ordered into the initrd, and discarded with
-the installation environment. The installer does not try to update the
+the installation environment. Immediately after switch-root, an installer-only
+unit restores the policy labels of the tmpfs mount point and its merged-`/usr`
+links before userdb, udev, module loading, or early tmpfiles can use them. The
+source-media helper relies on its ordered `systemd-udev-settle` dependency and
+does not execute udev again inside its `NoNewPrivileges` sandbox. The installer
+does not try to update the
 bootloader random seed on temporary media; installed systems retain the normal
 seed service, and the installation environment requires a hardware or virtual
 random-number generator.

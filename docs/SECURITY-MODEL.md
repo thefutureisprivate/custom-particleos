@@ -127,7 +127,14 @@ its initrd boot, `systemd-fstab-generator` bind mounts the labelled factory
 policy from the signed `/usr` into the temporary root as read-only,
 `nosuid,nodev,noexec` content. The `x-initrd.mount` option makes this a required
 pre-switch-root mount instead of a main-system mount. The installer therefore
-does not need a permissive or SELinux-disabled compatibility path.
+does not need a permissive or SELinux-disabled compatibility path. After
+switch-root, an installer-only early unit restores the expected labels on `/`,
+`/etc`, and the four merged-`/usr` compatibility links created on the tmpfs
+root. It runs before userdb, udev, module loading, sysusers, and early tmpfiles;
+the relabel is deliberately non-recursive because PID 1 and tmpfiles own the
+remaining runtime labels. The source ESP helper then consumes the completed
+`systemd-udev-settle` dependency rather than attempting a second udev client
+transition inside its `NoNewPrivileges` sandbox.
 
 The installer profile masks `systemd-boot-random-seed.service` because its
 source ESP can be attached read-only and is not persistent system state. The
