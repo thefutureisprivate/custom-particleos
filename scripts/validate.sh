@@ -559,6 +559,8 @@ if find mkosi.uefi.db mkosi.uefi.KEK -type f -print 2>/dev/null | grep -q .; the
 fi
 require_fixed "ipe.enforce=1" "$role_policy"
 require_fixed "lockdown=confidentiality" "$role_policy"
+require_fixed "mount.usrflags=ro,nodev" "$role_policy"
+reject_fixed "mount.usrflags=ro,nosuid" "$role_policy"
 for kernel_argument in \
         audit_backlog_limit=8192 \
         rootflags=nosuid,nodev \
@@ -1381,12 +1383,14 @@ fi
 require_fixed 'grep -Fqx "IMAGE_ID=\"$IMAGE_ID\""' mkosi.scripts/particleos.finalize
 require_fixed 'find "$image_tree" -xdev -type f -perm /6000 -perm /0111' mkosi.scripts/particleos.finalize
 require_fixed '-exec chmod a-s -- {} +' mkosi.scripts/particleos.finalize
-require_fixed '-print -quit' mkosi.scripts/particleos.finalize
+require_fixed 'readonly pam_shadow_helper="$BUILDROOT/usr/bin/unix_chkpwd"' mkosi.scripts/particleos.finalize
+require_fixed 'chmod 4755 "$pam_shadow_helper"' mkosi.scripts/particleos.finalize
+require_fixed '((${#remaining_setid[@]} != 1))' mkosi.scripts/particleos.finalize
 reject_fixed 'PROFILES' "$postinst"
 for role_image_id in "${role_image_ids[@]}"; do
     require_fixed "$role_image_id" "$postinst"
 done
-require_fixed 'set-ID executable remains after finalization' mkosi.scripts/particleos.finalize
+require_fixed 'unexpected set-ID executable after finalization' mkosi.scripts/particleos.finalize
 
 resolved_conf=mkosi.extra/usr/lib/systemd/resolved.conf.d/40-particleos-dns.conf
 require_fixed "DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com" "$resolved_conf"

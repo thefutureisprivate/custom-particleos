@@ -96,7 +96,7 @@ that the kernel trusts through UEFI.
 | Socket classes | SELinux denial of AF_ALG, IPsec control, packet-radio, and unused legacy families |
 | Time | Multiple authenticated NTS sources with source agreement |
 | SSH | Ed25519 keys only, ML-KEM hybrid key exchange, no root/password/forwarding/tunnels, source-keyed rate limit |
-| Privilege elevation | systemd `run0`, polkit authentication, no `sudo`, no set-ID executables |
+| Privilege elevation | systemd `run0`, polkit authentication, no `sudo`; only Linux-PAM's constrained `unix_chkpwd` verifier retains set-user-ID |
 | Services | Capability bounds, namespace isolation, read-only filesystems, syscall/address-family filters, OOM policy |
 
 “GrapheneOS-derived” means that a server setting was adapted to Fedora 44 and
@@ -105,11 +105,14 @@ copied wholesale.
 
 ## Boot and Kernel Policy
 
-The authenticated `/usr` slots and writable root are mounted `nosuid`; root is
-also mounted `nodev`. The build strips set-user-ID and set-group-ID bits from
-every executable under `/usr`, `/etc`, `/opt`, and `/var`, then fails if one
-remains. `mount` and `umount` are retained at mode 0755 for use through an
-already privileged `run0` context.
+The authenticated `/usr` slots are mounted read-only and `nodev`; writable root
+is mounted `nosuid,nodev`, and homed user images are `nosuid,nodev`. Current
+Linux-PAM always delegates protected-shadow verification to `unix_chkpwd`, so
+that narrow upstream helper retains mode 4755 in dm-verity-authenticated
+`/usr`. The build strips set-user-ID and set-group-ID bits from every other
+executable under `/usr`, `/etc`, `/opt`, and `/var`, then fails unless the
+helper is the sole exception. `mount` and `umount` remain mode 0755 for use
+through an already privileged `run0` context.
 
 The `hardened_malloc` and `no_rlimit_as` shared objects retain secureblue's
 non-executable mode 4644. On a shared object this bit is loader metadata used
@@ -135,9 +138,9 @@ the relabel is deliberately non-recursive because PID 1 and tmpfiles own the
 remaining runtime labels. The source ESP helper then consumes the completed
 `systemd-udev-settle` dependency rather than attempting a second udev client
 transition inside its `NoNewPrivileges` sandbox. Fedora's existing
-`init_t`-to-`setfiles_t` domain transition receives only the
-`nosuid_transition` permission required to run this immutable relabel helper
-from ParticleOS's authenticated, nosuid `/usr`.
+`init_t`-to-`setfiles_t` domain transition retains the narrowly scoped
+`nosuid_transition` permission needed by installer and service-image paths
+which execute from explicitly nosuid mounts.
 
 The installer profile masks `systemd-boot-random-seed.service` because its
 source ESP can be attached read-only and is not persistent system state. The
@@ -145,12 +148,12 @@ mask applies only to the installer UKI profile; the installed profile retains
 bootloader seed rotation. Installation requires the VPS hardware RNG or vRNG
 already required by the runtime design.
 
-Because `/usr` is `nosuid`, service-domain transitions require explicit
-`process2:nosuid_transition` permissions. ParticleOS grants only the named
-transitions required by shipped daemons, homed's isolated homework process,
-console authentication, user sessions, and SSH re-exec. PostgreSQL and
-Stalwart also receive their matching `nnp_transition` permission because both
-services use `NoNewPrivileges=yes`.
+Installer and service-image paths remain explicitly `nosuid`, so their
+service-domain transitions require `process2:nosuid_transition` permissions.
+ParticleOS grants only the named transitions required by shipped daemons,
+homed's isolated homework process, console authentication, user sessions, and
+SSH re-exec. PostgreSQL and Stalwart also receive their matching
+`nnp_transition` permission because both services use `NoNewPrivileges=yes`.
 
 The module-lockdown unit runs after the declared modules and nftables rules are
 loaded. It removes the modprobe helper and sets
@@ -257,7 +260,9 @@ interactive session before SFTP or a remote command can run unattended.
 The homed password is accepted by console login and `run0`; the distinct root
 password is reserved for console and recovery use. Polkit authorizes `run0`;
 `sudo` is absent. Polkit's root, socket-activated PAM helper does not require a
-set-ID executable.
+set-ID executable. Console login's `pam_unix` stack uses the sole set-ID
+exception, `unix_chkpwd`, to compare credentials without exposing shadow
+hashes to the login process.
 
 SSH is socket activated on every IPv4 and IPv6 source. Only the Ed25519 host
 key generation instance is enabled. Every session receives Fedora's

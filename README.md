@@ -89,8 +89,10 @@ Every image includes:
   plaintext DNS fallback;
 - key-only Ed25519 SSH, with root login, passwords, forwarding, and tunnels
   disabled;
-- zero set-user-ID or set-group-ID executables. `mount` and `umount` remain
-  mode 0755 and are available through `run0`;
+- one set-user-ID executable: Linux-PAM's narrow `unix_chkpwd` protected-shadow
+  verifier in read-only, dm-verity-authenticated `/usr`. Every other set-ID
+  executable is stripped; `mount` and `umount` remain mode 0755 and are
+  available through `run0`;
 - systemd `run0` and polkit for administration. `sudo` is not installed;
 - HTTPS-only Fedora, OBS, systemd, and system-update transports;
 - no crash dumps, suspend, hibernation, desktop stack, default password,

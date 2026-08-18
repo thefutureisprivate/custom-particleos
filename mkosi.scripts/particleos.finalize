@@ -45,8 +45,11 @@ if [[ -n ${IMAGE_VERSION:-} ]]; then
 fi
 
 # polkit authentication is handled by its root socket service, not by a SUID
-# process. Strip set-user-ID and set-group-ID from every executable file in the
-# shipped trees, including package additions which are not known in advance.
+# process. PAM nevertheless requires its upstream unix_chkpwd helper to read
+# the protected shadow database. Strip set-user-ID and set-group-ID from every
+# executable file in the shipped trees, including package additions which are
+# not known in advance, then restore only that audited helper. /usr is
+# read-only and dm-verity authenticated; writable root and home remain nosuid.
 # Starting find at each possible image filesystem keeps -xdev from skipping a
 # separately mounted /usr while avoiding build-environment pseudo-filesystems.
 for image_tree in \
@@ -59,7 +62,11 @@ for image_tree in \
         -exec chmod a-s -- {} +
 done
 
-remaining_setid=$(
+readonly pam_shadow_helper="$BUILDROOT/usr/bin/unix_chkpwd"
+[[ -x "$pam_shadow_helper" ]]
+chmod 4755 "$pam_shadow_helper"
+
+mapfile -t remaining_setid < <(
     for image_tree in \
         "$BUILDROOT/etc" \
         "$BUILDROOT/opt" \
@@ -67,11 +74,12 @@ remaining_setid=$(
         "$BUILDROOT/var"; do
         [[ -d "$image_tree" ]] || continue
         find "$image_tree" -xdev -type f -perm /6000 -perm /0111 \
-            -print -quit
+            -print
     done
 )
-if [[ -n "$remaining_setid" ]]; then
-    echo "set-ID executable remains after finalization: $remaining_setid" >&2
+if ((${#remaining_setid[@]} != 1)) || [[ ${remaining_setid[0]:-} != "$pam_shadow_helper" ]]; then
+    printf 'unexpected set-ID executable after finalization: %s\n' \
+        "${remaining_setid[@]:-none}" >&2
     exit 1
 fi
 
