@@ -14,9 +14,10 @@ source /etc/os-release
         "${IMAGE_ID:-}" >&2
     exit 1
 }
+readonly image_id_lower=${IMAGE_ID,,}
 
 selected=$(tail --bytes=+5 -- "$selected_var" | tr -d '\000')
-[[ $selected == "$IMAGE_ID-"*.efi* ]] || exit 0
+[[ ${selected,,} == "$image_id_lower-"*.efi* ]] || exit 0
 
 boot_path=$(bootctl --print-boot-path)
 [[ $boot_path == /* && $boot_path != / ]] || {
@@ -24,8 +25,8 @@ boot_path=$(bootctl --print-boot-path)
     exit 1
 }
 
-shopt -s nullglob
-update_ukis=("$boot_path/EFI/Linux/$IMAGE_ID-"*.efi)
+shopt -s nocaseglob nullglob
+update_ukis=("$boot_path/EFI/Linux/$image_id_lower-"*.efi)
 
 # The first update still needs the installer UKI as its rollback image. Once
 # two Type-2 UKIs exist, A/B rollback is self-contained and the original

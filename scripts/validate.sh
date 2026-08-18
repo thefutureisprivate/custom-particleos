@@ -304,12 +304,19 @@ for verity_sig_transfer in \
     require_fixed "MatchPattern=%M_@v_vsig" "$verity_sig_transfer"
     require_fixed "MatchPattern=%M_@v_verity_sig" "$verity_sig_transfer"
 done
-for uki_transfer in \
-        mkosi.sysupdate/20-uki.transfer \
-        mkosi.obs.extra/usr/lib/sysupdate.d/20-particleos-kernel.transfer; do
+uki_transfer=mkosi.sysupdate/20-uki.transfer
+require_fixed "MatchPattern=%M_@v_%a.efi" "$uki_transfer"
+require_fixed "MatchPattern=%M-@v_%a+@l-@d.efi" "$uki_transfer"
+reject_fixed "MatchPattern=%M_@v_%a+@l-@d.efi" "$uki_transfer"
+[[ ! -e mkosi.obs.extra/usr/lib/sysupdate.d/20-particleos-kernel.transfer ]] ||
+    fail "the OBS UKI transfer must be role-specific"
+for role in "${built_roles[@]}"; do
+    uki_transfer="mkosi.images/$role/mkosi.extra/usr/lib/sysupdate.d/20-particleos-kernel.transfer"
+    image_id_lower=${role_image_ids[$role],,}
     require_fixed "MatchPattern=%M_@v_%a.efi" "$uki_transfer"
-    require_fixed "MatchPattern=%M-@v_%a+@l-@d.efi" "$uki_transfer"
-    reject_fixed "MatchPattern=%M_@v_%a+@l-@d.efi" "$uki_transfer"
+    require_fixed "MatchPattern=$image_id_lower-@v_%a+@l-@d.efi" \
+        "$uki_transfer"
+    reject_fixed "MatchPattern=%M-@v_%a+@l-@d.efi" "$uki_transfer"
 done
 
 require_fixed "# needssslcertforbuild" "$obs_recipe"
@@ -1226,7 +1233,9 @@ require_fixed "ExecStartPost=-/usr/lib/particleos/retire-installer-boot" \
     fail "$installer_boot_retire must be executable"
 require_fixed 'LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f' \
     "$installer_boot_retire"
-require_fixed 'selected == "$IMAGE_ID-"*.efi*' "$installer_boot_retire"
+require_fixed 'selected,,} == "$image_id_lower-"*.efi*' \
+    "$installer_boot_retire"
+require_fixed 'shopt -s nocaseglob nullglob' "$installer_boot_retire"
 require_fixed '(( ${#update_ukis[@]} >= 2 )) || exit 0' \
     "$installer_boot_retire"
 require_fixed 'entries=("$boot_path/loader/entries/$IMAGE_ID-commit_"*.conf)' \

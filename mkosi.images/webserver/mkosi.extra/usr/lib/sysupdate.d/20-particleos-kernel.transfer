@@ -1,0 +1,22 @@
+[Transfer]
+ProtectVersion=%A
+
+[Source]
+Type=url-file
+Path=https://download.opensuse.org/repositories/home:/thefutureisprivate/%o_%w_images/
+MatchPattern=%M_@v_%a.efi
+
+[Target]
+Type=regular-file
+Path=/EFI/Linux
+PathRelativeTo=boot
+# systemd-boot case-folds selection patterns but currently preserves the case
+# of IDs parsed from boot-counted filenames. A lowercase target keeps the
+# counted candidate selectable until systemd-bless-boot removes its counters.
+MatchPattern=particleos-webserver-@v_%a+@l-@d.efi \
+  particleos-webserver-@v_%a+@l.efi \
+  particleos-webserver-@v_%a.efi
+Mode=0644
+TriesLeft=3
+TriesDone=0
+InstancesMax=2
