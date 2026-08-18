@@ -302,6 +302,13 @@ for verity_sig_transfer in \
     require_fixed "MatchPattern=%M_@v_vsig" "$verity_sig_transfer"
     require_fixed "MatchPattern=%M_@v_verity_sig" "$verity_sig_transfer"
 done
+for uki_transfer in \
+        mkosi.sysupdate/20-uki.transfer \
+        mkosi.obs.extra/usr/lib/sysupdate.d/20-particleos-kernel.transfer; do
+    require_fixed "MatchPattern=%M_@v_%a.efi" "$uki_transfer"
+    require_fixed "MatchPattern=%M-@v_%a+@l-@d.efi" "$uki_transfer"
+    reject_fixed "MatchPattern=%M_@v_%a+@l-@d.efi" "$uki_transfer"
+done
 
 require_fixed "# needssslcertforbuild" "$obs_recipe"
 require_fixed "Dependencies=webserver,mailserver" "$obs_recipe"

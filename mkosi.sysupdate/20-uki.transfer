@@ -13,12 +13,12 @@ MatchPattern=%M_@v_%a.efi
 Type=regular-file
 Path=/EFI/Linux
 PathRelativeTo=boot
-MatchPattern=%M_@v_%a+@l-@d.efi \
-             %M_@v_%a+@l.efi \
-             %M_@v_%a.efi \
-             %M_@v+@l-@d.efi \
-             %M_@v+@l.efi \
-             %M_@v.efi
+MatchPattern=%M-@v_%a+@l-@d.efi \
+             %M-@v_%a+@l.efi \
+             %M-@v_%a.efi \
+             %M-@v+@l-@d.efi \
+             %M-@v+@l.efi \
+             %M-@v.efi
 Mode=0600
 TriesLeft=3
 TriesDone=0

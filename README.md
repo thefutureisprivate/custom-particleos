@@ -370,6 +370,11 @@ security headers, and the exact packaged WebUI without depending on Internet
 availability. An unhealthy counted slot is not blessed, so systemd-boot
 returns to the previous complete OS version.
 
+Installed update UKIs use the same hyphenated boot-entry namespace as the
+initial installer entry. The role-specific default glob therefore includes
+both slots, and systemd-boot's version ordering selects the newest healthy
+candidate without an operator-maintained default entry.
+
 Stalwart has a separate signed-image lifecycle. Only explicitly compatible
 patch releases with unchanged database format and no migration are activated
 automatically. A failed application health check restores the retained
