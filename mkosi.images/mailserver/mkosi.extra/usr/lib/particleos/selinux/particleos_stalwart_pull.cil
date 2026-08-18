@@ -26,8 +26,16 @@
   ; created by the manager. Neither domain receives access to manager files.
   (allow .systemd_importd_t .stalwart_image_manager_t
     (fifo_file (getattr write)))
+  (allow .systemd_importd_t .stalwart_image_manager_t
+    (unix_dgram_socket (sendto)))
   (allow .system_dbusd_t .stalwart_image_manager_t
     (fifo_file (write)))
+
+  ; systemd-sysupdate downloads into the staging label, then adjusts the
+  ; completed file's mode before publishing it. The manager already owns the
+  ; staged file; permit only that metadata update, not relabelling or execute.
+  (allow .stalwart_image_manager_t .stalwart_image_staging_t
+    (file (setattr)))
 
   ; Like protected images, staging images are opened read-only after systemd's
   ; expected writable probe. Keep that probe denied without audit noise.

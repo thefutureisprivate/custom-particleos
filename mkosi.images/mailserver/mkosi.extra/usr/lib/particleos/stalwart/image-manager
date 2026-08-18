@@ -489,7 +489,15 @@ update_image() {
     local staged_images=()
     local image
 
-    if availability=$(systemd-sysupdate --component=stalwart --json=short check-new); then
+    # An interrupted acquisition leaves a partial marker which sysupdate will
+    # not overwrite. Vacuum only the isolated acquisition directory before
+    # checking so the unattended timer is self-healing. Managed/selected
+    # images live in a different directory and are outside this transfer.
+    systemd-sysupdate --component=stalwart vacuum 9>&- ||
+        die 'failed to clean the Stalwart image acquisition directory'
+    if availability=$(
+        systemd-sysupdate --component=stalwart --json=short check-new 9>&-
+    ); then
         availability_status=0
     else
         availability_status=$?
@@ -500,7 +508,7 @@ update_image() {
     elif [[ $availability == '{"available":"'[0-9]*'"}' ]]; then
         ((availability_status == 0)) ||
             die 'failed to check the signed Stalwart image channel'
-        systemd-sysupdate --component=stalwart update ||
+        systemd-sysupdate --component=stalwart update 9>&- ||
             die 'failed to acquire the available Stalwart service image'
     else
         die "unexpected Stalwart update availability response: $availability"

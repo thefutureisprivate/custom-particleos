@@ -54,7 +54,10 @@ The image manager has no network access. systemd-sysupdate's labelled
 `systemd-pull` child alone transitions into Fedora's confined `systemd_importd_t` domain,
 and the unit-cgroup nftables allow-list gives that descendant bounded HTTPS.
 The manager may start and observe only the separately labelled Stalwart and
-mail-health units.
+mail-health units. Before each check, the manager vacuums incomplete staging
+files left by an interrupted transfer. This operation cannot remove selected
+or retained application images because those live in the separate protected
+store.
 
 ## Compatibility Contract
 

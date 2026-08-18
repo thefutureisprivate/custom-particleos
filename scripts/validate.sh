@@ -1036,8 +1036,12 @@ require_fixed ".systemd_unit_file_type" "$stalwart_pull_policy"
 require_fixed ".systemd_importd_t .stalwart_image_manager_t" \
     "$stalwart_pull_policy"
 require_fixed "(fifo_file (getattr write))" "$stalwart_pull_policy"
+require_fixed "(unix_dgram_socket (sendto))" "$stalwart_pull_policy"
 require_fixed ".system_dbusd_t .stalwart_image_manager_t" \
     "$stalwart_pull_policy"
+require_fixed ".stalwart_image_manager_t .stalwart_image_staging_t" \
+    "$stalwart_pull_policy"
+require_fixed "(file (setattr))" "$stalwart_pull_policy"
 require_fixed "(dontaudit .init_t .stalwart_image_staging_t (file (write)))" \
     "$stalwart_pull_policy"
 require_fixed ".stalwart_image_manager_t .particleos_stalwart_managed_unit_t" \
@@ -1059,6 +1063,10 @@ require_fixed "systemd-run --quiet --wait --pipe --collect" "$stalwart_image_man
 require_fixed "systemd-sysupdate --component=stalwart --json=short check-new" \
     "$stalwart_image_manager"
 require_fixed "systemd-sysupdate --component=stalwart update" "$stalwart_image_manager"
+require_fixed "systemd-sysupdate --component=stalwart vacuum 9>&-" \
+    "$stalwart_image_manager"
+[[ $(grep -Fc -- '9>&-' "$stalwart_image_manager") == 3 ]] ||
+    fail "$stalwart_image_manager must close the manager lock fd for every sysupdate child"
 require_fixed 'for image in "${staged_images[@]}"; do' "$stalwart_image_manager"
 require_fixed 'candidate_version=$image_version' "$stalwart_image_manager"
 reject_fixed 'done < <(' "$stalwart_image_manager"
