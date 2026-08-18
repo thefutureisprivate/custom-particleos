@@ -129,6 +129,12 @@ policy from the signed `/usr` into the temporary root as read-only,
 pre-switch-root mount instead of a main-system mount. The installer therefore
 does not need a permissive or SELinux-disabled compatibility path.
 
+The installer profile masks `systemd-boot-random-seed.service` because its
+source ESP can be attached read-only and is not persistent system state. The
+mask applies only to the installer UKI profile; the installed profile retains
+bootloader seed rotation. Installation requires the VPS hardware RNG or vRNG
+already required by the runtime design.
+
 Because `/usr` is `nosuid`, service-domain transitions require explicit
 `process2:nosuid_transition` permissions. ParticleOS grants only the named
 transitions required by shipped daemons, homed's isolated homework process,
