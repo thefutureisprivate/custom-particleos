@@ -228,8 +228,13 @@ Cloudflare outage cannot consume a healthy OS boot attempt.
 The installer profile contains no credential and boots directly into upstream
 `systemd-sysinstall`. That interface selects and partitions the target, copies
 the signed OS, links the UKI, installs systemd-boot, and reboots; it does not
-create accounts. On the installed system, `systemd-firstboot` replaces the
-unprovisioned root-password sentinel only after a separate console prompt.
+create accounts. Before it starts, ParticleOS verifies the project signature
+on the source ESP's systemd-boot binary using the OBS project certificate in
+the dm-verity-protected `/usr`, then makes that exact read-only binary the
+canonical bootctl source for the installer boot. Firmware enrolled only with
+the ParticleOS project key can therefore authenticate both the installed
+bootloader and its UKIs. On the installed system, `systemd-firstboot` replaces
+the unprovisioned root-password sentinel only after a separate console prompt.
 
 A second console-only service creates one systemd-homed administrator in
 `wheel` and `systemd-journal`. It accepts only a syntactically valid raw

@@ -215,8 +215,12 @@ the installation environment. Immediately after switch-root, an installer-only
 unit restores the policy labels of the tmpfs mount point and its merged-`/usr`
 links before userdb, udev, module loading, or early tmpfiles can use them. The
 source-media helper relies on its ordered `systemd-udev-settle` dependency and
-does not execute udev again inside its `NoNewPrivileges` sandbox. The installer
-does not try to update the
+does not execute udev again inside its `NoNewPrivileges` sandbox. It verifies
+the mkosi-obs-signed systemd-boot binary from the source ESP against the OBS
+project certificate protected by `/usr` dm-verity, then read-only bind mounts
+that exact binary over bootctl's canonical source path. The installed ESP
+therefore receives the ParticleOS-signed bootloader instead of Fedora's
+package-vendor-signed copy. The installer does not try to update the
 bootloader random seed on temporary media; installed systems retain the normal
 seed service, and the installation environment requires a hardware or virtual
 random-number generator.

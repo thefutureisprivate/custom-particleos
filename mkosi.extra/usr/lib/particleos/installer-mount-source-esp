@@ -25,8 +25,42 @@ readonly source_device="/dev/disk/by-partuuid/${partuuid}"
     exit 1
 }
 
-mountpoint --quiet /efi && exit 0
-systemd-mount \
-    --type=vfat \
-    --options=ro,nosuid,nodev,noexec \
-    -- "$source_device" /efi
+if ! mountpoint --quiet /efi; then
+    systemd-mount \
+        --type=vfat \
+        --options=ro,nosuid,nodev,noexec \
+        -- "$source_device" /efi
+fi
+
+readonly source_bootloader=/efi/EFI/systemd/systemd-bootx64.efi
+readonly installed_bootloader=/usr/lib/systemd/boot/efi/systemd-bootx64.efi
+readonly project_certificate=/usr/lib/verity.d/particleos-obs-project.crt
+
+[[ -f $source_bootloader ]] || {
+    printf 'The installer media does not contain systemd-boot.\n' >&2
+    exit 1
+}
+[[ -f $installed_bootloader ]] || {
+    printf 'The immutable OS does not contain the systemd-boot installation path.\n' >&2
+    exit 1
+}
+[[ -f $project_certificate ]] || {
+    printf 'The immutable OS does not contain its OBS project certificate.\n' >&2
+    exit 1
+}
+
+# mkosi-obs adds the project signature to the bootloader in the output ESP
+# after /usr has been sealed. systemd-sysinstall otherwise asks bootctl to copy
+# the package-vendor-signed /usr binary, which is deliberately not trusted by
+# firmware enrolled with only the ParticleOS project key. Verify the signed
+# output against the certificate already protected by /usr dm-verity, then
+# expose that exact file at bootctl's canonical source path for this installer
+# boot. The transient bind is read-only and disappears with the tmpfs root.
+sbverify --cert "$project_certificate" "$source_bootloader"
+
+if ! mountpoint --quiet "$installed_bootloader"; then
+    systemd-mount \
+        --type=none \
+        --options=bind,ro,nosuid,nodev,noexec \
+        -- "$source_bootloader" "$installed_bootloader"
+fi

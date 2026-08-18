@@ -140,6 +140,11 @@ require_fixed "tr -d '\\000'" "$installer_mount"
 reject_fixed 'udevadm settle' "$installer_mount"
 require_fixed 'systemd-mount' "$installer_mount"
 require_fixed '--options=ro,nosuid,nodev,noexec' "$installer_mount"
+require_fixed 'readonly source_bootloader=/efi/EFI/systemd/systemd-bootx64.efi' "$installer_mount"
+require_fixed 'readonly installed_bootloader=/usr/lib/systemd/boot/efi/systemd-bootx64.efi' "$installer_mount"
+require_fixed 'readonly project_certificate=/usr/lib/verity.d/particleos-obs-project.crt' "$installer_mount"
+require_fixed 'sbverify --cert "$project_certificate" "$source_bootloader"' "$installer_mount"
+require_fixed '--options=bind,ro,nosuid,nodev,noexec' "$installer_mount"
 require_fixed 'Requires=particleos-installer-source-esp.service' "$sysinstall_dropin"
 require_fixed 'After=particleos-installer-source-esp.service' "$sysinstall_dropin"
 require_fixed 'Before=systemd-sysinstall.service' "$installer_mount_unit"
@@ -498,7 +503,7 @@ for removed_package in hostname iproute iputils p11-kit passwd systemd-ukify; do
         fail "$removed_package is forbidden in the target package set"
     fi
 done
-for required_dependency in authselect btrfs-progs dosfstools findutils gnupg2 libcurl-minimal policycoreutils sed systemd-container; do
+for required_dependency in authselect btrfs-progs dosfstools findutils gnupg2 libcurl-minimal policycoreutils sbsigntools sed systemd-container; do
     if ! grep -Fxq "$required_dependency" <<<"$composed_packages"; then
         fail "$required_dependency is missing from the shared base package set"
     fi
