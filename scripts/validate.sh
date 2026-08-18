@@ -1165,7 +1165,7 @@ require_fixed 'printf '\''%s\n'\'' "$particleos_hostname" >/etc/hostname' \
     mkosi.scripts/particleos.postinst.chroot
 require_fixed "C /etc/hostname 0644 root root - /usr/share/factory/etc/hostname" \
     mkosi.extra/usr/lib/tmpfiles.d/etc.conf
-require_fixed 'exec /usr/bin/hostnamectl hostname "$configured_hostname"' \
+require_fixed 'exec /usr/bin/hostnamectl --static --transient hostname "$configured_hostname"' \
     "$hostname_apply"
 require_fixed "After=local-fs.target systemd-hostnamed.service" "$hostname_unit"
 require_fixed "Before=network-pre.target" "$hostname_unit"

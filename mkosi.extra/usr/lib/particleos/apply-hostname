@@ -6,6 +6,9 @@ set -euo pipefail
 # will be selected. Re-apply the persistent real-root hostname after
 # switch-root. hostnamectl expands a trailing question-mark pattern from the
 # machine ID while preserving an administrator's later static replacement.
+# Set only the static and transient names: the generic operation also attempts
+# to write /etc/machine-info's pretty hostname, which this service neither
+# needs nor permits through its read-only filesystem sandbox.
 IFS= read -r configured_hostname </etc/hostname
 [[ -n $configured_hostname ]]
-exec /usr/bin/hostnamectl hostname "$configured_hostname"
+exec /usr/bin/hostnamectl --static --transient hostname "$configured_hostname"
