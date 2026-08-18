@@ -122,6 +122,12 @@ and `/run` after loading policy. Udev sockets are recreated with SELinux active
 instead of carrying an unlabelled pre-policy netlink socket across
 switch-root.
 
+The installer profile has no persistent root to supply `/etc/selinux`. During
+its initrd boot, `systemd-fstab-generator` bind mounts the labelled factory
+policy from the signed `/usr` into the temporary root as read-only,
+`nosuid,nodev,noexec` content before switch-root. The installer therefore does
+not need a permissive or SELinux-disabled compatibility path.
+
 Because `/usr` is `nosuid`, service-domain transitions require explicit
 `process2:nosuid_transition` permissions. ParticleOS grants only the named
 transitions required by shipped daemons, homed's isolated homework process,
