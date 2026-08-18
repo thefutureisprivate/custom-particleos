@@ -310,10 +310,12 @@ require_fixed "REPLACE_WITH_REVIEWED_COMMIT" "$stalwart_seed_template"
 require_fixed ".obs/stalwart-seed/x86-64/mkosi.conf" "$stalwart_seed_template"
 require_fixed ".obs/stalwart-seed/x86-64/stalwart-seed.build" \
     "$stalwart_seed_template"
-require_fixed '<enable repository="stalwart_seed_images"/>' \
-    .obs/stalwart-image-meta.example.xml
-require_fixed '<enable repository="stalwart_images"/>' \
-    .obs/stalwart-image-updates-meta.example.xml
+for release_meta in \
+        .obs/stalwart-image-meta.example.xml \
+        .obs/stalwart-image-updates-meta.example.xml; do
+    require_fixed '<disable/>' "$release_meta"
+    reject_fixed '<enable ' "$release_meta"
+done
 require_fixed 'name="stalwart_seed_images" rebuild="local"' \
     .obs/project-meta.example.xml
 require_fixed '<service name="download_url">' "$service_template"
@@ -329,10 +331,10 @@ require_fixed "package: custom-particleos" .obs/workflows.example.yml
 reject_fixed "package: custom-particleos-webserver" .obs/workflows.example.yml
 
 require_fixed "Include=%D/mkosi.images/stalwart-common.conf" "$stalwart_service_config"
-require_fixed "ImageVersion=0.16.17.24" "$stalwart_service_config"
+require_fixed "ImageVersion=0.16.17.26" "$stalwart_service_config"
 require_fixed "Output=ParticleOS-Stalwart_%v_%a" "$stalwart_service_config"
 require_fixed "Include=%D/mkosi.images/stalwart-common.conf" "$stalwart_built_seed_config"
-require_fixed "ImageVersion=0.16.17.23" "$stalwart_built_seed_config"
+require_fixed "ImageVersion=0.16.17.25" "$stalwart_built_seed_config"
 require_fixed "Output=ParticleOS-Stalwart_%v_%a" "$stalwart_built_seed_config"
 require_fixed "ImageId=ParticleOS-Stalwart" "$stalwart_common_config"
 require_fixed "Format=disk" "$stalwart_common_config"
@@ -386,16 +388,16 @@ for metadata_key in \
     require_fixed "$metadata_key=" "$stalwart_built_seed_release"
 done
 require_fixed "STALWART_PACKAGE_RELEASE=22" "$stalwart_service_release"
-require_fixed "IMAGE_VERSION=0.16.17.24" "$stalwart_service_release"
+require_fixed "IMAGE_VERSION=0.16.17.26" "$stalwart_service_release"
 require_fixed "UPDATE_KIND=patch" "$stalwart_service_release"
 require_fixed "AUTOMATIC_UPDATE=yes" "$stalwart_service_release"
-require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14:0.16.17.16:0.16.17.20:0.16.17.22:0.16.17.23" \
+require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.14:0.16.17.16:0.16.17.20:0.16.17.22:0.16.17.23:0.16.17.25" \
     "$stalwart_service_release"
 require_fixed "STALWART_PACKAGE_RELEASE=22" "$stalwart_built_seed_release"
-require_fixed "IMAGE_VERSION=0.16.17.23" "$stalwart_built_seed_release"
+require_fixed "IMAGE_VERSION=0.16.17.25" "$stalwart_built_seed_release"
 require_fixed "UPDATE_KIND=seed" "$stalwart_built_seed_release"
 require_fixed "AUTOMATIC_UPDATE=no" "$stalwart_built_seed_release"
-require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.23" \
+require_fixed "ROLLBACK_COMPATIBLE_FROM=0.16.17.25" \
     "$stalwart_built_seed_release"
 require_fixed "DATABASE_FORMAT=postgresql-18-stalwart" "$stalwart_service_release"
 require_fixed "DATABASE_FORMAT=postgresql-18-stalwart" "$stalwart_built_seed_release"

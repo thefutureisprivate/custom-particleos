@@ -3,6 +3,5 @@
   <description>Retained signed dm-verity Stalwart recovery RootImage built from the custom RPM.</description>
   <build>
     <disable/>
-    <enable repository="stalwart_seed_images"/>
   </build>
 </package>

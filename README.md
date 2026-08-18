@@ -152,18 +152,22 @@ The project requires these packages:
    [`.obs/stalwart-image-meta.example.xml`](./.obs/stalwart-image-meta.example.xml)
    to `stalwart-image` and
    [`.obs/stalwart-image-updates-meta.example.xml`](./.obs/stalwart-image-updates-meta.example.xml)
-   to `stalwart-image-updates`.
+   to `stalwart-image-updates`. Both release lanes are disabled at rest.
 3. Copy [the seed `_service`
    template](./.obs/stalwart-seed/x86-64/_service.example) into
    `stalwart-image`, replace `REPLACE_WITH_REVIEWED_COMMIT` with a reviewed
-   immutable commit, and publish the signed seed.
+   immutable commit. Temporarily enable only `stalwart_seed_images`, publish
+   the signed seed once, and disable the package again before changing any
+   project or dependency metadata.
 4. Verify the seed's project signature, embedded dm-verity signature, release
    metadata, and compressed and raw SHA-256 digests. Record those digests in
    [`mkosi.resources/stalwart-seed/release`](./mkosi.resources/stalwart-seed/release).
 5. Copy [the application-image `_service`
    template](./.obs/stalwart-image/x86-64/_service.example) into
    `stalwart-image-updates` and pin it to each separately reviewed application
-   release.
+   release. Temporarily enable only `stalwart_images` for that versioned
+   build, then disable the package again. Never rebuild an existing image
+   version: dependency or recipe changes require a new `IMAGE_VERSION`.
 6. Copy [the OS `_service`
    template](./.obs/fedora/x86-64/_service.example) into
    `custom-particleos`, then replace `REPLACE_WITH_REVIEWED_COMMIT` with the

@@ -92,12 +92,12 @@ succeeds.
 ## Operator Commands
 
 Inspect acquisition and select the current published patch image
-`0.16.17.24` with:
+`0.16.17.26` with:
 
 ```sh
 run0 systemctl status particleos-stalwart-update.service
 run0 systemctl start particleos-stalwart-update.service
-run0 systemctl start particleos-stalwart-image-activate@0.16.17.24.service
+run0 systemctl start particleos-stalwart-image-activate@0.16.17.26.service
 run0 systemctl start particleos-stalwart-image-rollback.service
 ```
 
