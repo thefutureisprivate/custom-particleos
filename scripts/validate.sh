@@ -1240,6 +1240,10 @@ require_fixed '(( ${#update_ukis[@]} >= 2 )) || exit 0' \
     "$installer_boot_retire"
 require_fixed 'entries=("$boot_path/loader/entries/$IMAGE_ID-commit_"*.conf)' \
     "$installer_boot_retire"
+require_fixed 'for _ in {1..10}' "$installer_boot_retire"
+require_fixed 'if entry_data=$(<"$entry") 2>/dev/null; then' \
+    "$installer_boot_retire"
+require_fixed 'sleep 0.1' "$installer_boot_retire"
 require_fixed 'rm -- "${entries[@]}"' "$installer_boot_retire"
 reject_fixed 'rm -r' "$installer_boot_retire"
 reject_fixed 'rm -f' "$installer_boot_retire"
