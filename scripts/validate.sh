@@ -1227,7 +1227,7 @@ require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath
 require_fixed "FailureAction=reboot" "$bless_rollback_dropin"
 require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" \
     "$bless_rollback_dropin"
-require_fixed "ExecStartPost=-/usr/lib/particleos/retire-installer-boot" \
+require_fixed "ExecStartPost=-/usr/bin/bash /usr/lib/particleos/retire-installer-boot" \
     "$bless_rollback_dropin"
 [[ -x $installer_boot_retire ]] ||
     fail "$installer_boot_retire must be executable"
@@ -1240,10 +1240,6 @@ require_fixed '(( ${#update_ukis[@]} >= 2 )) || exit 0' \
     "$installer_boot_retire"
 require_fixed 'entries=("$boot_path/loader/entries/$IMAGE_ID-commit_"*.conf)' \
     "$installer_boot_retire"
-require_fixed 'for _ in {1..10}' "$installer_boot_retire"
-require_fixed 'if entry_data=$(<"$entry") 2>/dev/null; then' \
-    "$installer_boot_retire"
-require_fixed 'sleep 0.1' "$installer_boot_retire"
 require_fixed 'rm -- "${entries[@]}"' "$installer_boot_retire"
 reject_fixed 'rm -r' "$installer_boot_retire"
 reject_fixed 'rm -f' "$installer_boot_retire"

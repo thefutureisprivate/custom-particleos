@@ -378,9 +378,10 @@ boot counters, so version ordering selects the newest healthy slot without an
 operator-maintained default entry. After a second update has supplied two
 Type-2 UKIs and the new slot passes its health gate, the blessing transaction
 retires the now-obsolete Type-1 installer entries and their payloads. The first
-update keeps them because they are still its only rollback path. Cleanup uses
-bounded retries for transient ESP metadata contention immediately after the
-boot-counter rename; persistent access failures remain non-destructive.
+update keeps them because they are still its only rollback path. The blessing
+hook invokes its immutable cleanup script through the trusted system shell so
+SELinux does not need to grant the bootloader domain access to generic ESP
+files; cleanup remains best-effort and validates every path before deletion.
 
 Stalwart has a separate signed-image lifecycle. Only explicitly compatible
 patch releases with unchanged database format and no migration are activated
