@@ -134,7 +134,10 @@ root. It runs before userdb, udev, module loading, sysusers, and early tmpfiles;
 the relabel is deliberately non-recursive because PID 1 and tmpfiles own the
 remaining runtime labels. The source ESP helper then consumes the completed
 `systemd-udev-settle` dependency rather than attempting a second udev client
-transition inside its `NoNewPrivileges` sandbox.
+transition inside its `NoNewPrivileges` sandbox. Fedora's existing
+`init_t`-to-`setfiles_t` domain transition receives only the
+`nosuid_transition` permission required to run this immutable relabel helper
+from ParticleOS's authenticated, nosuid `/usr`.
 
 The installer profile masks `systemd-boot-random-seed.service` because its
 source ESP can be attached read-only and is not persistent system state. The

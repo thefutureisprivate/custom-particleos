@@ -9,6 +9,7 @@
   (allow .init_t .udev_t (process2 (nosuid_transition)))
   (allow .init_t .system_dbusd_t (process2 (nosuid_transition)))
   (allow .init_t .ldconfig_t (process2 (nosuid_transition)))
+  (allow .init_t .setfiles_t (process2 (nosuid_transition)))
   (allow .init_t .iptables_t (process2 (nosuid_transition)))
   (allow .init_t .sshd_keygen_t (process2 (nosuid_transition)))
   (allow .init_t .chronyd_t (process2 (nosuid_transition)))

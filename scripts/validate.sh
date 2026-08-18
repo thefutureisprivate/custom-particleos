@@ -1412,6 +1412,7 @@ for socket_policy in \
 done
 nosuid_transition_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_nosuid_daemon_transitions.cil
 require_fixed ".init_t .udev_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
+require_fixed ".init_t .setfiles_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .system_dbusd_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .ldconfig_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
 require_fixed ".init_t .iptables_t (process2 (nosuid_transition))" "$nosuid_transition_policy"
