@@ -61,7 +61,9 @@ VPS provider.
    Secure Boot state. The homed user image has its own password-backed LUKS
    boundary inside that storage.
 5. `systemd-sysupdate` installs complete A/B `/usr`, verity, signature, and UKI
-   artifacts. Boot counting preserves a previously blessed image.
+   artifacts. Boot counting preserves a previously blessed image. After two
+   update UKIs exist, a successful counted boot removes the installer-era
+   Type-1 entries whose original `/usr` slot is no longer retained.
 6. On the mailserver, PID 1 verifies the selected Stalwart DDI's embedded
    root-hash signature and dm-verity tree before execution. Selection is stored
    on the encrypted persistent root, independently of the OS slot.

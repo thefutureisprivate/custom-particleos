@@ -1,0 +1,80 @@
+#!/usr/bin/bash
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+set -euo pipefail
+
+readonly selected_var=/sys/firmware/efi/efivars/LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
+
+[[ -r $selected_var ]] || exit 0
+
+# shellcheck source=/dev/null
+source /etc/os-release
+[[ ${IMAGE_ID:-} =~ ^ParticleOS-[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+    printf 'Refusing to retire installer entries for invalid IMAGE_ID=%q\n' \
+        "${IMAGE_ID:-}" >&2
+    exit 1
+}
+
+selected=$(tail --bytes=+5 -- "$selected_var" | tr -d '\000')
+[[ $selected == "$IMAGE_ID-"*.efi* ]] || exit 0
+
+boot_path=$(bootctl --print-boot-path)
+[[ $boot_path == /* && $boot_path != / ]] || {
+    printf 'Refusing invalid boot path %q\n' "$boot_path" >&2
+    exit 1
+}
+
+shopt -s nullglob
+update_ukis=("$boot_path/EFI/Linux/$IMAGE_ID-"*.efi)
+
+# The first update still needs the installer UKI as its rollback image. Once
+# two Type-2 UKIs exist, A/B rollback is self-contained and the original
+# Type-1 entry can no longer be trusted to match a retained /usr slot.
+(( ${#update_ukis[@]} >= 2 )) || exit 0
+
+entries=("$boot_path/loader/entries/$IMAGE_ID-commit_"*.conf)
+(( ${#entries[@]} > 0 )) || exit 0
+
+payloads=()
+for entry in "${entries[@]}"; do
+    expected_uki=no
+    while read -r directive path _; do
+        case $directive in
+            uki)
+                [[ $path == "/$IMAGE_ID/"* && \
+                    ${path#"/$IMAGE_ID/"} != */* ]] || {
+                    printf 'Refusing unexpected installer UKI path %q in %s\n' \
+                        "$path" "$entry" >&2
+                    exit 1
+                }
+                expected_uki=yes
+                payloads+=("$boot_path$path")
+                ;;
+            extra)
+                [[ $path == "/$IMAGE_ID/"* && \
+                    ${path#"/$IMAGE_ID/"} != */* ]] || {
+                    printf 'Refusing unexpected installer credential path %q in %s\n' \
+                        "$path" "$entry" >&2
+                    exit 1
+                }
+                payloads+=("$boot_path$path")
+                ;;
+        esac
+    done <"$entry"
+    [[ $expected_uki == yes ]] || {
+        printf 'Refusing installer entry without a role-local UKI: %s\n' \
+            "$entry" >&2
+        exit 1
+    }
+done
+
+# Entries are removed first. An interrupted cleanup can therefore leave only
+# harmless unreachable payloads, never a menu entry pointing at partial data.
+rm -- "${entries[@]}"
+for payload in "${payloads[@]}"; do
+    [[ -e $payload ]] && rm -- "$payload"
+done
+rmdir -- "$boot_path/$IMAGE_ID" 2>/dev/null || true
+
+printf 'Retired obsolete %s installer boot entries after A/B activation.\n' \
+    "$IMAGE_ID"

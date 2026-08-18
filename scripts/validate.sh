@@ -93,6 +93,7 @@ homed_selinux_dropin=mkosi.extra/usr/lib/systemd/system/systemd-homed.service.d/
 homed_login_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 home_repart=mkosi.extra/usr/lib/repart.d/50-home.conf
 base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
+installer_boot_retire=mkosi.extra/usr/lib/particleos/retire-installer-boot
 obs_recipes=("$obs_recipe" "$stalwart_obs_recipe" "$stalwart_seed_obs_recipe")
 
 require_fixed "Dependencies=webserver,mailserver" mkosi.conf
@@ -1219,6 +1220,20 @@ require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath
 require_fixed "FailureAction=reboot" "$bless_rollback_dropin"
 require_fixed "ConditionPathExists=/sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f" \
     "$bless_rollback_dropin"
+require_fixed "ExecStartPost=-/usr/lib/particleos/retire-installer-boot" \
+    "$bless_rollback_dropin"
+[[ -x $installer_boot_retire ]] ||
+    fail "$installer_boot_retire must be executable"
+require_fixed 'LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f' \
+    "$installer_boot_retire"
+require_fixed 'selected == "$IMAGE_ID-"*.efi*' "$installer_boot_retire"
+require_fixed '(( ${#update_ukis[@]} >= 2 )) || exit 0' \
+    "$installer_boot_retire"
+require_fixed 'entries=("$boot_path/loader/entries/$IMAGE_ID-commit_"*.conf)' \
+    "$installer_boot_retire"
+require_fixed 'rm -- "${entries[@]}"' "$installer_boot_retire"
+reject_fixed 'rm -r' "$installer_boot_retire"
+reject_fixed 'rm -f' "$installer_boot_retire"
 require_fixed "Requires=nginx.service" "$web_health_unit"
 require_fixed "Before=boot-complete.target" "$web_health_unit"
 require_fixed "FailureAction=reboot" "$web_health_unit"
