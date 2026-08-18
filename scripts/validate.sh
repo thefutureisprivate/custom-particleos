@@ -89,6 +89,7 @@ installer_selinux_label_ordering=mkosi.extra/usr/lib/systemd/system/systemd-tmpf
 sysinstall_dropin=mkosi.extra/usr/lib/systemd/system/systemd-sysinstall.service.d/40-particleos-source-esp.conf
 installer_tmpfiles=mkosi.extra/usr/lib/tmpfiles.d/particleos-installer.conf
 homed_config=mkosi.extra/usr/lib/systemd/homed.conf.d/40-particleos.conf
+homed_selinux_dropin=mkosi.extra/usr/lib/systemd/system/systemd-homed.service.d/40-particleos-selinux.conf
 homed_login_policy=mkosi.extra/usr/lib/particleos/selinux/particleos_homed_login.cil
 home_repart=mkosi.extra/usr/lib/repart.d/50-home.conf
 base_preset=mkosi.extra/usr/lib/systemd/system-preset/10-particleos.preset
@@ -773,6 +774,8 @@ done
 require_fixed "/usr/lib64/security/pam_systemd_loadkey.so" "$role_policy"
 require_fixed "DefaultStorage=luks" "$homed_config"
 require_fixed "DefaultFileSystemType=btrfs" "$homed_config"
+require_fixed "SYSTEMD_HOME_MOUNT_OPTIONS_BTRFS=compress=zstd:1,noacl,user_subvol_rm_allowed,rootcontext=system_u:object_r:user_home_dir_t:s0" \
+    "$homed_selinux_dropin"
 require_fixed ".sshd_session_t .systemd_userdbd_runtime_t" "$homed_login_policy"
 require_fixed ".policykit_auth_t .systemd_homed_t" "$homed_login_policy"
 require_fixed "ExecStart=/usr/bin/systemd-firstboot --prompt-root-password --mute-console=yes" \

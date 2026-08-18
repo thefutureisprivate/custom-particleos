@@ -246,7 +246,9 @@ installer profile. Root remains prohibited over SSH. The homed administrator
 is a member of `wheel` and `systemd-journal`; its user data is a LUKS/Btrfs
 image on the dedicated TPM2-encrypted home partition. The public key is stored
 in the signed homed user record, where systemd-userdb can supply it before the
-home is open.
+home is open. The Btrfs image root receives `user_home_dir_t` as a mount-time
+SELinux `rootcontext`, so the first enforcing login can enter the newly mounted
+home without a transient unlabeled directory.
 
 On a cold or inactive home, an interactive SSH login therefore has two distinct
 steps: sshd first verifies the Ed25519 key, then

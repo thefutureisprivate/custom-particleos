@@ -245,7 +245,10 @@ Ed25519 key, passes that public key to `homectl create`, explicitly selects a
 password-encrypted LUKS/Btrfs user image, enforces password-quality policy, and
 records completion atomically. The dedicated `/home` backing partition is
 also TPM2 encrypted, capped at 4 GiB so an administrator home cannot consume
-application storage, and the user image is mounted `nosuid,nodev`.
+application storage, and the user image is mounted `nosuid,nodev`. The Btrfs
+mount applies `user_home_dir_t` to its filesystem root with SELinux
+`rootcontext`; this labels the mount atomically before PAM enters the home and
+also applies to homes created by an earlier OS slot.
 
 The key is stored in the signed homed identity rather than only inside the
 locked home. sshd's packaged systemd-userdb `AuthorizedKeysCommand` can
